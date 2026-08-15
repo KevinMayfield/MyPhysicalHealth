@@ -1,0 +1,21 @@
+{
+  "name": "myphysicalhealth",
+  "version": "1.0.0",
+  "description": "Turns a cyclist's GPX ride into a cardio/strength poster report, viewable as HTML and exportable as PDF.",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "^4.19.2",
+    "fast-xml-parser": "^4.4.1",
+    "multer": "^2.2.0",
+    "puppeteer": "^25.7.0",
+    "sharp": "^0.33.5"
+  }
+}
