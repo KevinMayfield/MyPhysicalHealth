@@ -55,10 +55,18 @@ function buildReportHtml(data) {
   const strengthSpotLabel = strengthName ? escapeHtml(strengthName) : 'the climb';
 
   const mapAlt = effortSource ? 'Route map coloured by effort' : 'Route map coloured by workout type';
-  const mapHtml = mapResult.usedBasemap
-    ? `<img src="${mapResult.dataUrl}" alt="${mapAlt}" />
-       <p class="map-attribution">Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</p>`
+  const mapMediaHtml = mapResult.usedBasemap
+    ? `<img class="map-zoom-target" src="${mapResult.dataUrl}" alt="${mapAlt}" />`
     : mapResult.svgMarkup;
+  const mapHtml = `<div class="map-zoom-wrap">
+      <div class="map-zoom-controls no-print">
+        <button type="button" class="map-zoom-btn" data-zoom="in" aria-label="Zoom in">+</button>
+        <button type="button" class="map-zoom-btn" data-zoom="out" aria-label="Zoom out">&#8722;</button>
+        <button type="button" class="map-zoom-btn" data-zoom="reset" aria-label="Reset zoom">&#8634;</button>
+      </div>
+      <div class="map-zoom-scroll">${mapMediaHtml}</div>
+    </div>
+    ${mapResult.usedBasemap ? `<p class="map-attribution">Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</p>` : ''}`;
 
   const effortMetric = effortSource === 'power' ? 'power' : 'heart rate';
   const routeIntro = effortSource
@@ -73,12 +81,14 @@ function buildReportHtml(data) {
   const hasLowValueSpots = Boolean(lowValueSpots && lowValueSpots.length);
   const hasJunctionSpots = Boolean(lowValueSpots && lowValueSpots.some((s) => s.possibleJunction));
   const hasBonkSpots = Boolean(bonkEpisodes && bonkEpisodes.length);
+  const hasDecoupleOnset = Boolean(decoupleOnset);
   const lowValueLegendHtml =
     hasLowValueSpots || hasBonkSpots
       ? `<div class="legend low-value-legend">
         ${hasLowValueSpots ? `<span class="swatch"><span class="icon-chip low-value">${icons.lowValueDot}</span>Low training value</span>` : ''}
-        ${hasJunctionSpots ? `<span class="swatch"><span class="icon-chip junction">${icons.junctionFlag}</span>Possible junction / rough patch</span>` : ''}
+        ${hasJunctionSpots ? `<span class="swatch"><span class="icon-chip junction">${icons.junctionFlag}</span>Possible junction / rest stop</span>` : ''}
         ${hasBonkSpots ? `<span class="swatch"><span class="icon-chip bonk">${icons.bonkDiamond}</span>Possible bonk</span>` : ''}
+        ${hasDecoupleOnset ? `<span class="swatch"><span class="icon-chip decouple">${icons.decoupleHexagon}</span>Early signs of a bonk</span>` : ''}
       </div>`
       : '';
 
@@ -219,7 +229,7 @@ function buildReportHtml(data) {
       <span class="icon-chip ${chipClass}">${iconHtml}</span>
       <div>
         <strong>${formatDuration(spot.durationS)}</strong> ${whereText}
-        ${spot.possibleJunction ? '<span class="tag">possibly a junction, lights, or a rough patch</span>' : ''}
+        ${spot.possibleJunction ? '<span class="tag">possibly a junction, lights, rest stop, or a rough patch</span>' : ''}
       </div>
     </li>`;
   }
@@ -413,6 +423,28 @@ function buildReportHtml(data) {
 
 </div>
 ${includeToolbar ? `<div class="toolbar no-print"><a class="btn" href="${pdfHref}">Download PDF</a></div>` : ''}
+<script>
+  document.querySelectorAll('.map-zoom-wrap').forEach(function (wrap) {
+    var target = wrap.querySelector('.map-zoom-target');
+    var scroll = wrap.querySelector('.map-zoom-scroll');
+    if (!target || !scroll) return;
+    var steps = [100, 150, 200, 300, 400];
+    var idx = 0;
+    function apply() {
+      target.style.width = steps[idx] + '%';
+      scroll.classList.toggle('is-zoomed', idx > 0);
+    }
+    wrap.querySelectorAll('[data-zoom]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var action = btn.getAttribute('data-zoom');
+        if (action === 'in') idx = Math.min(idx + 1, steps.length - 1);
+        else if (action === 'out') idx = Math.max(idx - 1, 0);
+        else idx = 0;
+        apply();
+      });
+    });
+  });
+</script>
 </body>
 </html>`;
 }

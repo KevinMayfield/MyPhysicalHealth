@@ -28,4 +28,7 @@ const junctionFlag =
 const bonkDiamond =
   '<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><polygon points="8,1 15,8 8,15 1,8" fill="currentColor" stroke="#fffaf0" stroke-width="1.5" stroke-linejoin="round"/><text x="8" y="11.5" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="800" fill="#fffaf0" text-anchor="middle">&#8595;</text></svg>';
 
-module.exports = { heart, dumbbell, muscle, bone, balance, bolt, wind, lowValueDot, junctionFlag, bonkDiamond };
+const decoupleHexagon =
+  '<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><polygon points="8,1 14,4.5 14,11.5 8,15 2,11.5 2,4.5" fill="currentColor" stroke="#fffaf0" stroke-width="1.5" stroke-linejoin="round"/><text x="8" y="11.5" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="800" fill="#fffaf0" text-anchor="middle">&#8595;</text></svg>';
+
+module.exports = { heart, dumbbell, muscle, bone, balance, bolt, wind, lowValueDot, junctionFlag, bonkDiamond, decoupleHexagon };

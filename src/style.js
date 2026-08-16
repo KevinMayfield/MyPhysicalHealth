@@ -174,6 +174,35 @@ section { margin-bottom: 32px; }
 .map-attribution { font-size: 12px; color: var(--ink-muted); text-align: right; margin: 8px 4px 0; }
 .map-attribution a { color: var(--ink-muted); }
 
+.map-zoom-wrap { position: relative; }
+.map-zoom-controls { position: absolute; top: 12px; left: 12px; z-index: 2; display: flex; gap: 6px; }
+.map-zoom-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(253, 249, 240, 0.92);
+  color: #2b2b24;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(38, 38, 32, 0.18);
+}
+.map-zoom-btn:hover { background: #fffaf0; }
+.map-zoom-scroll { overflow: auto; border-radius: 12px; max-height: 640px; }
+.map-zoom-scroll img, .map-zoom-scroll svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  transition: width 0.15s ease;
+}
+.map-zoom-scroll.is-zoomed { cursor: grab; }
+
 .zone-badge {
   display: inline-flex;
   align-items: center;
@@ -206,6 +235,7 @@ section { margin-bottom: 32px; }
 .icon-chip.low-value { color: #6f6c5f; }
 .icon-chip.junction { color: #8a5a2f; }
 .icon-chip.bonk { color: #7a2e3f; }
+.icon-chip.decouple { color: #c9932e; }
 
 .low-value-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
 .low-value-item { display: flex; align-items: flex-start; gap: 12px; font-size: 14px; line-height: 1.5; }
@@ -427,6 +457,8 @@ footer {
   .no-print { display: none !important; }
   .poster { max-width: none; padding: 0; }
   .card, .panel, .benefit-card, .takeaway, section { break-inside: avoid; }
+  .map-zoom-scroll { overflow: visible !important; max-height: none !important; }
+  .map-zoom-scroll img, .map-zoom-scroll svg { width: 100% !important; }
   @page { size: A4; margin: 12mm; }
 }
 `;

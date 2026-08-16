@@ -1,5 +1,6 @@
 const { COLORS } = require('./map');
 const { EFFORT_COLORS } = require('./effortColors');
+const { SPOT_COLORS } = require('./spotColors');
 
 const CATEGORY_BY_CLASS = { flat: 'cardio', climb: 'strength', descent: 'recovery' };
 
@@ -18,16 +19,42 @@ function hexToRgba(hex, alpha) {
 
 const EFFORT_FILL_ALPHA = EFFORT_COLORS.map((hex) => hexToRgba(hex, 0.32));
 
+function diamondMarker(x, y, s, color) {
+  const pts = [
+    [x, y - s],
+    [x + s, y],
+    [x, y + s],
+    [x - s, y],
+  ]
+    .map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`)
+    .join(' ');
+  return `<polygon points="${pts}" fill="${color}" stroke="#fffaf0" stroke-width="1.5" stroke-linejoin="round" />`;
+}
+
+function hexagonMarker(x, y, s, color) {
+  const pts = [0, 60, 120, 180, 240, 300]
+    .map((deg) => {
+      const rad = (deg * Math.PI) / 180;
+      return [x + s * Math.sin(rad), y - s * Math.cos(rad)];
+    })
+    .map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`)
+    .join(' ');
+  return `<polygon points="${pts}" fill="${color}" stroke="#fffaf0" stroke-width="1.5" stroke-linejoin="round" />`;
+}
+
 /**
  * Builds an inline SVG elevation profile: distance on x, elevation on y,
  * filled area + line. Coloured by effort (heart rate, or power if HR is
  * absent) when available, matching the map; falls back to the terrain
- * category colours otherwise.
+ * category colours otherwise. Marks any bonk episodes and the aerobic
+ * decoupling onset (if found) along the top, with a guide line down to
+ * the profile so they're easy to line up with the climb/descent below.
  */
 function buildElevationSvg(points, analysis, width = 880, height = 220) {
-  const { dist, smoothEle, segments, effortSegments } = analysis;
+  const { dist, smoothEle, segments, effortSegments, bonkEpisodes, decoupleOnset } = analysis;
   const n = points.length;
-  const margin = { top: 16, right: 12, bottom: 12, left: 12 };
+  const hasMarkers = Boolean((bonkEpisodes && bonkEpisodes.length) || decoupleOnset);
+  const margin = { top: hasMarkers ? 30 : 16, right: 12, bottom: 12, left: 12 };
   const plotW = width - margin.left - margin.right;
   const plotH = height - margin.top - margin.bottom;
 
@@ -48,17 +75,45 @@ function buildElevationSvg(points, analysis, width = 880, height = 220) {
         return { startIdx: s.startIdx, endIdx: s.endIdx, stroke: COLORS[cat], fill: FILL_ALPHA[cat] };
       });
 
+  // Long mountain rides can carry tens of thousands of points; drawing
+  // every one bloats the SVG enough to choke the renderer. One or two
+  // points per pixel of chart width is visually lossless at this scale.
+  const MAX_PROFILE_POINTS = 1200;
+  const stride = Math.max(1, Math.floor(n / MAX_PROFILE_POINTS));
+
   const parts = [];
   for (const seg of colorSegments) {
     const endIdx = Math.min(seg.endIdx + 1, n - 1); // extend to next point so fills touch, no gaps
 
     const linePts = [];
-    for (let i = seg.startIdx; i <= endIdx; i++) linePts.push(`${xOf(i).toFixed(1)},${yOf(i).toFixed(1)}`);
+    for (let i = seg.startIdx; i <= endIdx; i += stride) linePts.push(`${xOf(i).toFixed(1)},${yOf(i).toFixed(1)}`);
+    if ((endIdx - seg.startIdx) % stride !== 0) linePts.push(`${xOf(endIdx).toFixed(1)},${yOf(endIdx).toFixed(1)}`);
 
     const areaPts = [`${xOf(seg.startIdx).toFixed(1)},${baseline.toFixed(1)}`, ...linePts, `${xOf(endIdx).toFixed(1)},${baseline.toFixed(1)}`];
 
     parts.push(`<polygon points="${areaPts.join(' ')}" fill="${seg.fill}" />`);
     parts.push(`<polyline points="${linePts.join(' ')}" fill="none" stroke="${seg.stroke}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />`);
+  }
+
+  if (hasMarkers) {
+    const xAtKm = (km) => margin.left + ((km * 1000) / totalDist) * plotW;
+    const markerY = 15;
+    const guideTop = markerY + 10;
+
+    for (const ep of bonkEpisodes || []) {
+      const x = xAtKm(ep.atStartKm);
+      parts.push(`<line x1="${x.toFixed(1)}" y1="${guideTop.toFixed(1)}" x2="${x.toFixed(1)}" y2="${baseline.toFixed(1)}" stroke="${SPOT_COLORS.bonk}" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.55" />`);
+    }
+    if (decoupleOnset) {
+      const x = xAtKm(decoupleOnset.atKm);
+      parts.push(`<line x1="${x.toFixed(1)}" y1="${guideTop.toFixed(1)}" x2="${x.toFixed(1)}" y2="${baseline.toFixed(1)}" stroke="${SPOT_COLORS.decouple}" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.55" />`);
+    }
+    for (const ep of bonkEpisodes || []) {
+      parts.push(diamondMarker(xAtKm(ep.atStartKm), markerY, 9, SPOT_COLORS.bonk));
+    }
+    if (decoupleOnset) {
+      parts.push(hexagonMarker(xAtKm(decoupleOnset.atKm), markerY, 9, SPOT_COLORS.decouple));
+    }
   }
 
   return `<svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Elevation profile">${parts.join('')}</svg>`;
