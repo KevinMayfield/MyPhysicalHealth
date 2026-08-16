@@ -311,6 +311,30 @@ section { margin-bottom: 32px; }
 .activity-table td { font-size: 15px; font-weight: 600; }
 .activity-table td:first-child { font-weight: 700; }
 
+.zone-breakdown-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 16px 16px 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.zone-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.zone-table th, .zone-table td { padding: 8px 20px; text-align: left; }
+.zone-table th {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--border);
+}
+.zone-table td { font-size: 14px; font-weight: 600; }
+.zone-table td:first-child { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.zone-table .dot { width: 14px; height: 14px; border-radius: 4px; flex: none; display: inline-block; }
+
 .panels {
   display: flex;
   gap: 20px;

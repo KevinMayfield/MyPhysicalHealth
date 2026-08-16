@@ -121,7 +121,27 @@ function buildReportHtml(data) {
       (${NHS_VIGOROUS_TARGET_MIN} min), for adults aged 19-64.</p>`;
   }
 
-  function activityTableCard(label, basisText, moderateS, vigorousS) {
+  function zoneBreakdownTable(zoneSecondsByBin) {
+    if (!zoneSecondsByBin) return '';
+    return `<p class="zone-breakdown-label">Time in each zone</p>
+      <div class="table-scroll">
+        <table class="zone-table">
+          <thead>
+            <tr><th>Zone</th><th>Minutes</th></tr>
+          </thead>
+          <tbody>
+            ${zoneSecondsByBin
+              .map(
+                (s, i) =>
+                  `<tr><td><span class="dot" style="background:${EFFORT_COLORS[i]}"></span>${EFFORT_LABELS[i]}</td><td>${formatDuration(s)}</td></tr>`
+              )
+              .join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function activityTableCard(label, basisText, moderateS, vigorousS, zoneSecondsByBin) {
     return `<div class="card table-card">
       <p class="table-basis"><strong>${label}</strong> — ${basisText}</p>
       <div class="table-scroll">
@@ -149,29 +169,22 @@ function buildReportHtml(data) {
         </table>
       </div>
       ${nhsLine(moderateS, vigorousS)}
+      ${zoneBreakdownTable(zoneSecondsByBin)}
     </div>`;
   }
 
   const tableCards = [];
   if (powerSummary) {
-    tableCards.push(
-      activityTableCard(
-        'Power zones',
-        `FTP estimate ${formatInt(powerSummary.ftp)}W — 95% of your best 20-minute power this ride`,
-        powerSummary.moderateS,
-        powerSummary.vigorousS
-      )
-    );
+    const ftpBasis = powerSummary.isManual
+      ? `FTP entered: ${formatInt(powerSummary.ftp)}W`
+      : `FTP estimate ${formatInt(powerSummary.ftp)}W — 95% of your best 20-minute power this ride`;
+    tableCards.push(activityTableCard('Power zones', ftpBasis, powerSummary.moderateS, powerSummary.vigorousS, powerSummary.zoneSecondsByBin));
   }
   if (hrSummary) {
-    tableCards.push(
-      activityTableCard(
-        'Heart-rate zones',
-        `LTHR estimate ${formatInt(hrSummary.lthr)} bpm — 88% of your peak heart rate this ride`,
-        hrSummary.moderateS,
-        hrSummary.vigorousS
-      )
-    );
+    const lthrBasis = hrSummary.isManual
+      ? `LTHR entered: ${formatInt(hrSummary.lthr)} bpm`
+      : `LTHR estimate ${formatInt(hrSummary.lthr)} bpm — 88% of your peak heart rate this ride`;
+    tableCards.push(activityTableCard('Heart-rate zones', lthrBasis, hrSummary.moderateS, hrSummary.vigorousS, hrSummary.zoneSecondsByBin));
   }
   if (ageSummary) {
     tableCards.push(
@@ -179,7 +192,8 @@ function buildReportHtml(data) {
         'Age-based heart-rate zones',
         `LTHR estimate ${formatInt(ageSummary.lthr)} bpm — 88% of an age-estimated max HR of ${formatInt(ageSummary.maxHrEstimated)} bpm (Tanaka formula)`,
         ageSummary.moderateS,
-        ageSummary.vigorousS
+        ageSummary.vigorousS,
+        ageSummary.zoneSecondsByBin
       )
     );
   }

@@ -6,7 +6,7 @@ const { renderPdf, shutdown } = require('./pdf');
 
 const PORT = process.env.PORT || 3000;
 const REPORT_TTL_MS = 60 * 60 * 1000;
-const AGE_COOKIE_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
+const PROFILE_COOKIE_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -29,6 +29,16 @@ function parseAge(value) {
   return Number.isFinite(n) && n >= 5 && n <= 110 ? Math.round(n) : null;
 }
 
+function parseFtp(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 30 && n <= 600 ? Math.round(n) : null;
+}
+
+function parseLthr(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 80 && n <= 220 ? Math.round(n) : null;
+}
+
 /** @type {Map<string, { rideName: string, html: string, createdAt: number }>} */
 const reports = new Map();
 
@@ -42,6 +52,8 @@ function cleanupExpiredReports() {
 app.get('/', (req, res) => {
   const cookies = parseCookies(req.headers.cookie);
   const savedAge = parseAge(cookies.age);
+  const savedFtp = parseFtp(cookies.ftp);
+  const savedLthr = parseLthr(cookies.lthr);
 
   res.type('html').send(`<!doctype html>
 <html lang="en">
@@ -81,6 +93,16 @@ app.get('/', (req, res) => {
         <input type="number" id="age" name="age" min="5" max="110" placeholder="e.g. 42" value="${savedAge ?? ''}" />
         <p class="hint">Used to estimate a heart-rate zone from your age (Tanaka formula). Remembered on this device via a cookie — never sent anywhere else.</p>
       </div>
+      <div class="field">
+        <label for="ftp">Your FTP in watts (optional)</label>
+        <input type="number" id="ftp" name="ftp" min="30" max="600" placeholder="e.g. 220" value="${savedFtp ?? ''}" />
+        <p class="hint">If you know your real FTP from a test, it replaces the in-ride estimate for power zones.</p>
+      </div>
+      <div class="field">
+        <label for="lthr">Your LTHR in bpm (optional)</label>
+        <input type="number" id="lthr" name="lthr" min="80" max="220" placeholder="e.g. 165" value="${savedLthr ?? ''}" />
+        <p class="hint">If you know your real lactate-threshold heart rate, it replaces the in-ride estimate for heart-rate zones.</p>
+      </div>
       <button type="submit">Generate report</button>
     </form>
     <div id="status"></div>
@@ -103,12 +125,15 @@ app.post('/generate', upload.single('gpxfile'), async (req, res) => {
   try {
     cleanupExpiredReports();
     const age = parseAge(req.body.age);
-    if (age !== null) {
-      res.cookie('age', String(age), { maxAge: AGE_COOKIE_MAX_AGE_MS, httpOnly: true, sameSite: 'lax' });
-    }
+    const ftp = parseFtp(req.body.ftp);
+    const lthr = parseLthr(req.body.lthr);
+    const cookieOpts = { maxAge: PROFILE_COOKIE_MAX_AGE_MS, httpOnly: true, sameSite: 'lax' };
+    if (age !== null) res.cookie('age', String(age), cookieOpts);
+    if (ftp !== null) res.cookie('ftp', String(ftp), cookieOpts);
+    if (lthr !== null) res.cookie('lthr', String(lthr), cookieOpts);
     const xml = req.file.buffer.toString('utf8');
     const id = crypto.randomUUID();
-    const { html, rideName } = await generateReportHtml(xml, { includeToolbar: true, pdfHref: `/report/${id}/pdf`, age });
+    const { html, rideName } = await generateReportHtml(xml, { includeToolbar: true, pdfHref: `/report/${id}/pdf`, age, ftp, lthr });
     reports.set(id, { rideName, html, createdAt: Date.now() });
     res.redirect(`/report/${id}`);
   } catch (err) {

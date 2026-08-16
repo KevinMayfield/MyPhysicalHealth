@@ -9,10 +9,10 @@ const { buildReportHtml } = require('./template');
  * Runs the full GPX-to-poster pipeline and returns the finished
  * self-contained HTML report string.
  */
-async function generateReportHtml(gpxXml, { includeToolbar = false, pdfHref = '', age = null } = {}) {
+async function generateReportHtml(gpxXml, { includeToolbar = false, pdfHref = '', age = null, ftp = null, lthr = null } = {}) {
   const { name, activityType, points } = parseGpx(gpxXml);
   const rideName = name || 'Untitled ride';
-  const analysis = analyseRide(points, { age });
+  const analysis = analyseRide(points, { age, ftp, lthr });
 
   const { climbName, flatName } = await geocodeHighlights(analysis.highlightClimb, analysis.highlightFlat);
 

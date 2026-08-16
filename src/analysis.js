@@ -137,18 +137,20 @@ function smoothEffortSeries(points, hasTime, timeWindowBounds, source) {
 
 /**
  * Bins an already-smoothed series into zones via zoneOf, and returns the
- * fold-cleaned zone segments plus total moderate (zones 2-3) / vigorous
- * (zones 4-5) seconds.
+ * fold-cleaned zone segments, seconds spent in each of the 5 zones, and
+ * the moderate (zones 2-3) / vigorous (zones 4-5) totals.
  */
 function zonesFromSmoothSeries(points, hasTime, smooth, zoneOf) {
   const n = points.length;
   const zoneBin = smooth.map((v) => zoneOf(v) - 1); // 0-indexed: 0=Zone1 ... 4=Zone5
 
+  const zoneSecondsByBin = [0, 0, 0, 0, 0];
   let moderateS = 0;
   let vigorousS = 0;
   for (let i = 1; i < n; i++) {
     const dt = hasTime ? secondsBetween(points[i - 1].time, points[i].time) : 1;
     const bin = zoneBin[i];
+    zoneSecondsByBin[bin] += dt;
     if (bin === 1 || bin === 2) moderateS += dt;
     else if (bin === 3 || bin === 4) vigorousS += dt;
   }
@@ -163,33 +165,38 @@ function zonesFromSmoothSeries(points, hasTime, smooth, zoneOf) {
   }
   const segments = foldShortSegments(rawSegs, 'bin', points, hasTime);
 
-  return { zoneBin, segments, moderateS, vigorousS };
+  return { zoneBin, segments, zoneSecondsByBin, moderateS, vigorousS };
 }
 
 /**
  * Computes a full effort-zone breakdown (FTP zones for power, LTHR zones
- * for heart rate) for one metric: the estimated threshold, zone segments
- * for colouring, and total moderate (zones 2-3) / vigorous (zones 4-5)
+ * for heart rate) for one metric: the threshold, zone segments for
+ * colouring, and total moderate (zones 2-3) / vigorous (zones 4-5)
  * seconds. Independent of which metric (if any) drives the map colour,
  * so power and heart rate can both be summarised when both are present.
+ *
+ * If manualThreshold is given (a known real-world FTP or LTHR), it's
+ * used directly instead of estimating one from this ride — a known
+ * value is more trustworthy than an in-ride estimate.
  */
-function computeEffortZones(points, hasTime, timeWindowBounds, source) {
+function computeEffortZones(points, hasTime, timeWindowBounds, source, manualThreshold) {
   const smooth = smoothEffortSeries(points, hasTime, timeWindowBounds, source);
+  const isManual = typeof manualThreshold === 'number' && Number.isFinite(manualThreshold) && manualThreshold > 0;
 
   let threshold;
   let zoneOf;
   if (source === 'power') {
-    const best20MinPower = bestAverageOverWindow(points, hasTime, BEST_POWER_WINDOW_S, 'power');
-    threshold = best20MinPower * FTP_FROM_BEST20_FACTOR;
+    threshold = isManual ? manualThreshold : bestAverageOverWindow(points, hasTime, BEST_POWER_WINDOW_S, 'power') * FTP_FROM_BEST20_FACTOR;
     zoneOf = (v) => powerZone(v, threshold);
   } else {
-    const maxHrRecorded = Math.max(...points.filter((p) => typeof p.hr === 'number').map((p) => p.hr));
-    threshold = maxHrRecorded * LTHR_FROM_MAXHR_FACTOR;
+    threshold = isManual
+      ? manualThreshold
+      : Math.max(...points.filter((p) => typeof p.hr === 'number').map((p) => p.hr)) * LTHR_FROM_MAXHR_FACTOR;
     zoneOf = (v) => hrZone(v, threshold);
   }
 
-  const { zoneBin, segments, moderateS, vigorousS } = zonesFromSmoothSeries(points, hasTime, smooth, zoneOf);
-  return { threshold, zoneBin, segments, moderateS, vigorousS };
+  const { zoneBin, segments, zoneSecondsByBin, moderateS, vigorousS } = zonesFromSmoothSeries(points, hasTime, smooth, zoneOf);
+  return { threshold, isManual, zoneBin, segments, zoneSecondsByBin, moderateS, vigorousS };
 }
 
 /**
@@ -282,7 +289,7 @@ function foldShortSegments(rawSegs, keyField, points, hasTime, minSegS = MIN_SEG
  * list of GPX trackpoints and returns per-point series, per-category
  * aggregates, and the two highlight segments.
  */
-function analyseRide(points, { age } = {}) {
+function analyseRide(points, { age, ftp, lthr } = {}) {
   const n = points.length;
   const dist = new Array(n).fill(0); // cumulative metres
   for (let i = 1; i < n; i++) {
@@ -341,16 +348,32 @@ function analyseRide(points, { age } = {}) {
   const hasPower = points.some((p) => typeof p.power === 'number');
   const hasHr = points.some((p) => typeof p.hr === 'number');
 
-  const powerZones = hasPower ? computeEffortZones(points, hasTime, timeWindowBounds, 'power') : null;
-  const hrZones = hasHr ? computeEffortZones(points, hasTime, timeWindowBounds, 'hr') : null;
+  const powerZones = hasPower ? computeEffortZones(points, hasTime, timeWindowBounds, 'power', ftp) : null;
+  const hrZones = hasHr ? computeEffortZones(points, hasTime, timeWindowBounds, 'hr', lthr) : null;
 
   const effortSource = hasPower ? 'power' : hasHr ? 'hr' : null;
   const primaryZones = effortSource === 'power' ? powerZones : effortSource === 'hr' ? hrZones : null;
   const effortSegments = primaryZones ? primaryZones.segments : [];
   const effortThreshold = primaryZones ? primaryZones.threshold : null;
 
-  const powerSummary = powerZones ? { ftp: powerZones.threshold, moderateS: powerZones.moderateS, vigorousS: powerZones.vigorousS } : null;
-  const hrSummary = hrZones ? { lthr: hrZones.threshold, moderateS: hrZones.moderateS, vigorousS: hrZones.vigorousS } : null;
+  const powerSummary = powerZones
+    ? {
+        ftp: powerZones.threshold,
+        isManual: powerZones.isManual,
+        zoneSecondsByBin: powerZones.zoneSecondsByBin,
+        moderateS: powerZones.moderateS,
+        vigorousS: powerZones.vigorousS,
+      }
+    : null;
+  const hrSummary = hrZones
+    ? {
+        lthr: hrZones.threshold,
+        isManual: hrZones.isManual,
+        zoneSecondsByBin: hrZones.zoneSecondsByBin,
+        moderateS: hrZones.moderateS,
+        vigorousS: hrZones.vigorousS,
+      }
+    : null;
 
   // --- Age-based LTHR (Tanaka max-HR estimate), same zone thresholds as
   //     the recorded-HR LTHR summary, just anchored to an age-estimated
@@ -360,8 +383,8 @@ function analyseRide(points, { age } = {}) {
     const maxHrEstimated = TANAKA_MAXHR_INTERCEPT - TANAKA_MAXHR_AGE_FACTOR * age;
     const ageLthr = maxHrEstimated * LTHR_FROM_MAXHR_FACTOR;
     const hrSmooth = smoothEffortSeries(points, hasTime, timeWindowBounds, 'hr');
-    const { moderateS, vigorousS } = zonesFromSmoothSeries(points, hasTime, hrSmooth, (v) => hrZone(v, ageLthr));
-    ageSummary = { maxHrEstimated, lthr: ageLthr, moderateS, vigorousS };
+    const { zoneSecondsByBin, moderateS, vigorousS } = zonesFromSmoothSeries(points, hasTime, hrSmooth, (v) => hrZone(v, ageLthr));
+    ageSummary = { maxHrEstimated, lthr: ageLthr, zoneSecondsByBin, moderateS, vigorousS };
   }
 
   // --- Smoothed speed (km/h) over the same ~15s window, used to tell a
