@@ -289,6 +289,18 @@ function analyseRide(points, { age } = {}) {
     dist[i] = dist[i - 1] + haversineMeters(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon);
   }
 
+  // Privacy: the map (bounding box, drawn route, and any flagged spots)
+  // should never show the first/last 200m, since a ride's start/end is
+  // very often the rider's home.
+  let mapStartIdx = 0;
+  while (mapStartIdx < n - 1 && dist[mapStartIdx] < PRIVACY_EXCLUSION_M) mapStartIdx++;
+  let mapEndIdx = n - 1;
+  while (mapEndIdx > 0 && dist[n - 1] - dist[mapEndIdx] < PRIVACY_EXCLUSION_M) mapEndIdx--;
+  if (mapEndIdx <= mapStartIdx) {
+    mapStartIdx = 0;
+    mapEndIdx = n - 1;
+  }
+
   const hasTime = points.every((p) => p.time instanceof Date && !isNaN(p.time));
 
   // Shared ~15s (or +/-7 point) smoothing window, reused for elevation,
@@ -747,6 +759,8 @@ function analyseRide(points, { age } = {}) {
     lowValueSpots,
     bonkEpisodes,
     decoupleOnset,
+    mapStartIdx,
+    mapEndIdx,
     totalDistanceM,
     totalDurationS,
     stats,

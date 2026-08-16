@@ -230,6 +230,7 @@ section { margin-bottom: 32px; }
 .legend .swatch { display: inline-flex; align-items: center; gap: 8px; }
 .legend .dot { width: 22px; height: 8px; border-radius: 4px; display: inline-block; }
 .low-value-legend { margin-top: 0; font-size: 13px; }
+.legend-hint { text-align: center; font-size: 12px; color: var(--ink-muted); margin: 4px 0 0; }
 
 .icon-chip { display: inline-flex; align-items: center; }
 .icon-chip.low-value { color: #6f6c5f; }

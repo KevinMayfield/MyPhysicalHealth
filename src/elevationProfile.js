@@ -42,18 +42,34 @@ function hexagonMarker(x, y, s, color) {
   return `<polygon points="${pts}" fill="${color}" stroke="#fffaf0" stroke-width="1.5" stroke-linejoin="round" />`;
 }
 
+function circleMarker(x, y, s, color) {
+  return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${s}" fill="${color}" stroke="#fffaf0" stroke-width="1.5" />`;
+}
+
+function triangleMarker(x, y, s, color) {
+  const pts = [
+    [x, y - s],
+    [x - s, y + s * 0.75],
+    [x + s, y + s * 0.75],
+  ]
+    .map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`)
+    .join(' ');
+  return `<polygon points="${pts}" fill="${color}" stroke="#fffaf0" stroke-width="1.5" stroke-linejoin="round" />`;
+}
+
 /**
  * Builds an inline SVG elevation profile: distance on x, elevation on y,
  * filled area + line. Coloured by effort (heart rate, or power if HR is
  * absent) when available, matching the map; falls back to the terrain
- * category colours otherwise. Marks any bonk episodes and the aerobic
- * decoupling onset (if found) along the top, with a guide line down to
- * the profile so they're easy to line up with the climb/descent below.
+ * category colours otherwise. Marks any low-value/junction spots, bonk
+ * episodes, and the aerobic decoupling onset (if found) along the top,
+ * with a guide line down to the profile so they're easy to line up with
+ * the climb/descent below.
  */
 function buildElevationSvg(points, analysis, width = 880, height = 220) {
-  const { dist, smoothEle, segments, effortSegments, bonkEpisodes, decoupleOnset } = analysis;
+  const { dist, smoothEle, segments, effortSegments, lowValueSpots, bonkEpisodes, decoupleOnset } = analysis;
   const n = points.length;
-  const hasMarkers = Boolean((bonkEpisodes && bonkEpisodes.length) || decoupleOnset);
+  const hasMarkers = Boolean((lowValueSpots && lowValueSpots.length) || (bonkEpisodes && bonkEpisodes.length) || decoupleOnset);
   const margin = { top: hasMarkers ? 30 : 16, right: 12, bottom: 12, left: 12 };
   const plotW = width - margin.left - margin.right;
   const plotH = height - margin.top - margin.bottom;
@@ -100,13 +116,18 @@ function buildElevationSvg(points, analysis, width = 880, height = 220) {
     const markerY = 15;
     const guideTop = markerY + 10;
 
-    for (const ep of bonkEpisodes || []) {
-      const x = xAtKm(ep.atStartKm);
-      parts.push(`<line x1="${x.toFixed(1)}" y1="${guideTop.toFixed(1)}" x2="${x.toFixed(1)}" y2="${baseline.toFixed(1)}" stroke="${SPOT_COLORS.bonk}" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.55" />`);
+    function guideLine(x, color) {
+      parts.push(`<line x1="${x.toFixed(1)}" y1="${guideTop.toFixed(1)}" x2="${x.toFixed(1)}" y2="${baseline.toFixed(1)}" stroke="${color}" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.55" />`);
     }
-    if (decoupleOnset) {
-      const x = xAtKm(decoupleOnset.atKm);
-      parts.push(`<line x1="${x.toFixed(1)}" y1="${guideTop.toFixed(1)}" x2="${x.toFixed(1)}" y2="${baseline.toFixed(1)}" stroke="${SPOT_COLORS.decouple}" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.55" />`);
+
+    for (const spot of lowValueSpots || []) guideLine(xAtKm(spot.atDistanceKm), spot.possibleJunction ? SPOT_COLORS.junction : SPOT_COLORS.lowValue);
+    for (const ep of bonkEpisodes || []) guideLine(xAtKm(ep.atStartKm), SPOT_COLORS.bonk);
+    if (decoupleOnset) guideLine(xAtKm(decoupleOnset.atKm), SPOT_COLORS.decouple);
+
+    for (const spot of lowValueSpots || []) {
+      const x = xAtKm(spot.atDistanceKm);
+      if (spot.possibleJunction) parts.push(triangleMarker(x, markerY, 8, SPOT_COLORS.junction));
+      else parts.push(circleMarker(x, markerY, 7, SPOT_COLORS.lowValue));
     }
     for (const ep of bonkEpisodes || []) {
       parts.push(diamondMarker(xAtKm(ep.atStartKm), markerY, 9, SPOT_COLORS.bonk));

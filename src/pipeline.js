@@ -32,7 +32,9 @@ async function generateReportHtml(gpxXml, { includeToolbar = false, pdfHref = ''
     highlights,
     analysis.lowValueSpots,
     analysis.bonkEpisodes,
-    analysis.decoupleOnset
+    analysis.decoupleOnset,
+    analysis.mapStartIdx,
+    analysis.mapEndIdx
   );
   const elevationSvg = buildElevationSvg(points, analysis);
 

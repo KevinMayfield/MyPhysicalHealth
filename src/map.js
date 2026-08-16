@@ -100,6 +100,18 @@ function resolveRouteColorSegments(terrainSegments, effortSegments) {
   return terrainSegments.map((s) => ({ startIdx: s.startIdx, endIdx: s.endIdx, color: COLORS[CATEGORY_BY_CLASS[s.cls]] }));
 }
 
+// Clips (and drops entirely-outside) colour segments to a privacy-safe
+// index range, so the drawn route never reaches the first/last 200m.
+function clipSegmentsToRange(colorSegments, startIdx, endIdx) {
+  const out = [];
+  for (const seg of colorSegments) {
+    const s = Math.max(seg.startIdx, startIdx);
+    const e = Math.min(seg.endIdx, endIdx);
+    if (s < e) out.push({ ...seg, startIdx: s, endIdx: e });
+  }
+  return out;
+}
+
 function routePolylines(points, colorSegments, projectFn, offsetX, offsetY) {
   const parts = [];
   for (const seg of colorSegments) {
@@ -157,6 +169,37 @@ function pinsMarkup(highlights, projectFn, offsetX, offsetY, canvasWidth, canvas
       return pinMarkup(x - offsetX, y - offsetY, pin.name, pin.color, canvasWidth, canvasHeight);
     })
     .join('');
+}
+
+// A small lettered circle marking where a highlighted cardio/strength
+// stretch actually starts or ends, distinct from the bigger named "best
+// spot" pin (which sits at a representative point within it, not
+// necessarily either end).
+function endpointMarkup(x, y, letter, color) {
+  return [
+    `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="7" fill="${color}" stroke="#fffaf0" stroke-width="2" />`,
+    `<text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="800" fill="#fffaf0" text-anchor="middle">${letter}</text>`,
+  ].join('');
+}
+
+function highlightEndpointsMarkup(points, highlights, projectFn, offsetX, offsetY, mapStartIdx, mapEndIdx) {
+  const defs = [
+    highlights.climb && { seg: highlights.climb, color: COLORS.strength },
+    highlights.flat && { seg: highlights.flat, color: COLORS.cardio },
+  ].filter(Boolean);
+
+  const parts = [];
+  for (const { seg, color } of defs) {
+    if (seg.startIdx >= mapStartIdx && seg.startIdx <= mapEndIdx) {
+      const { x, y } = projectFn(points[seg.startIdx].lat, points[seg.startIdx].lon);
+      parts.push(endpointMarkup(x - offsetX, y - offsetY, 'S', color));
+    }
+    if (seg.endIdx >= mapStartIdx && seg.endIdx <= mapEndIdx) {
+      const { x, y } = projectFn(points[seg.endIdx].lat, points[seg.endIdx].lon);
+      parts.push(endpointMarkup(x - offsetX, y - offsetY, 'E', color));
+    }
+  }
+  return parts.join('');
 }
 
 // A filled circle with a minus sign: a stretch that sat in the easiest
@@ -255,8 +298,8 @@ function decoupleMarkersMarkup(decoupleOnset, projectFn, offsetX, offsetY) {
  * Throws if tiles can't be fetched — caller should fall back to the
  * schematic renderer.
  */
-async function renderBasemap(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset) {
-  const bbox = computeBbox(points, 0.08);
+async function renderBasemap(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, mapStartIdx, mapEndIdx) {
+  const bbox = computeBbox(points.slice(mapStartIdx, mapEndIdx + 1), 0.08);
   const { zoom, xMin, xMax, yMin, yMax } = chooseZoom(bbox);
 
   const positions = [];
@@ -296,12 +339,13 @@ async function renderBasemap(points, segments, effortSegments, highlights, lowVa
 
   const cropOffsetX = originX + cropX;
   const cropOffsetY = originY + cropY;
-  const colorSegments = resolveRouteColorSegments(segments, effortSegments);
+  const colorSegments = clipSegmentsToRange(resolveRouteColorSegments(segments, effortSegments), mapStartIdx, mapEndIdx);
   const overlaySvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cropW}" height="${cropH}">
     ${routePolylines(points, colorSegments, projectFn, cropOffsetX, cropOffsetY)}
     ${lowValueMarkersMarkup(lowValueSpots, projectFn, cropOffsetX, cropOffsetY)}
     ${bonkMarkersMarkup(bonkEpisodes, projectFn, cropOffsetX, cropOffsetY)}
     ${decoupleMarkersMarkup(decoupleOnset, projectFn, cropOffsetX, cropOffsetY)}
+    ${highlightEndpointsMarkup(points, highlights, projectFn, cropOffsetX, cropOffsetY, mapStartIdx, mapEndIdx)}
     ${pinsMarkup(highlights, projectFn, cropOffsetX, cropOffsetY, cropW, cropH)}
   </svg>`;
 
@@ -323,15 +367,16 @@ async function renderBasemap(points, segments, effortSegments, highlights, lowVa
  * no basemap, same colour coding. Returned as inline SVG markup (no
  * raster step needed) for use when tiles are unavailable.
  */
-function renderSchematic(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset) {
+function renderSchematic(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, mapStartIdx, mapEndIdx) {
   const width = 900;
   const height = 560;
   const margin = 60;
 
-  const latMin = Math.min(...points.map((p) => p.lat));
-  const latMax = Math.max(...points.map((p) => p.lat));
-  const lonMin = Math.min(...points.map((p) => p.lon));
-  const lonMax = Math.max(...points.map((p) => p.lon));
+  const mapPoints = points.slice(mapStartIdx, mapEndIdx + 1);
+  const latMin = Math.min(...mapPoints.map((p) => p.lat));
+  const latMax = Math.max(...mapPoints.map((p) => p.lat));
+  const lonMin = Math.min(...mapPoints.map((p) => p.lon));
+  const lonMax = Math.max(...mapPoints.map((p) => p.lon));
   const cosLat = Math.cos(((latMin + latMax) / 2) * Math.PI / 180);
 
   const xOf = (lon) => (lon - lonMin) * cosLat;
@@ -344,24 +389,27 @@ function renderSchematic(points, segments, effortSegments, highlights, lowValueS
   const offsetY = (height - spanY * scale) / 2;
   const projectFn = (lat, lon) => ({ x: xOf(lon) * scale + offsetX, y: yOf(lat) * scale + offsetY });
 
-  const colorSegments = resolveRouteColorSegments(segments, effortSegments);
+  const colorSegments = clipSegmentsToRange(resolveRouteColorSegments(segments, effortSegments), mapStartIdx, mapEndIdx);
   const svgMarkup = `<svg class="map-zoom-target" viewBox="0 0 ${width} ${height}" width="100%" height="${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Schematic route map">
     <rect x="0" y="0" width="${width}" height="${height}" fill="#fdf9f0" />
     ${routePolylines(points, colorSegments, projectFn, 0, 0)}
     ${lowValueMarkersMarkup(lowValueSpots, projectFn, 0, 0)}
     ${bonkMarkersMarkup(bonkEpisodes, projectFn, 0, 0)}
     ${decoupleMarkersMarkup(decoupleOnset, projectFn, 0, 0)}
+    ${highlightEndpointsMarkup(points, highlights, projectFn, 0, 0, mapStartIdx, mapEndIdx)}
     ${pinsMarkup(highlights, projectFn, 0, 0, width, height)}
   </svg>`;
 
   return { svgMarkup, width, height, usedBasemap: false };
 }
 
-async function renderRouteMap(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset) {
+async function renderRouteMap(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, mapStartIdx, mapEndIdx) {
+  const startIdx = mapStartIdx ?? 0;
+  const endIdx = mapEndIdx ?? points.length - 1;
   try {
-    return await renderBasemap(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset);
+    return await renderBasemap(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, startIdx, endIdx);
   } catch {
-    return renderSchematic(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset);
+    return renderSchematic(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, startIdx, endIdx);
   }
 }
 

@@ -92,17 +92,21 @@ function buildReportHtml(data) {
       </div>`
       : '';
 
+  const endpointHintHtml = `<p class="legend-hint">S and E mark where the highlighted cardio and strength stretches actually start and end.</p>`;
+
   const legendHtml = effortSource
     ? `<div class="legend effort-legend">
         ${EFFORT_COLORS.map((color, i) => `<span class="swatch"><span class="dot" style="background:${color}"></span>${EFFORT_LABELS[i]}</span>`).join('')}
       </div>
-      ${lowValueLegendHtml}`
+      ${lowValueLegendHtml}
+      ${endpointHintHtml}`
     : `<div class="legend">
         <span class="swatch"><span class="dot" style="background:var(--cardio)"></span>Cardio — flat &amp; rolling</span>
         <span class="swatch"><span class="dot" style="background:var(--strength)"></span>Strength — climbing</span>
         <span class="swatch"><span class="dot" style="background:var(--recovery)"></span>Recovery</span>
       </div>
-      ${lowValueLegendHtml}`;
+      ${lowValueLegendHtml}
+      ${endpointHintHtml}`;
 
   const activityLabel = formatActivityLabel(activityType);
 
@@ -317,25 +321,6 @@ function buildReportHtml(data) {
     </div>
   </header>
 
-  <section class="map-section">
-    <div class="section-head">
-      <p class="eyebrow">Your route, colour-coded</p>
-      <h2>Where the workout changed</h2>
-      <p>${routeIntro}</p>
-    </div>
-    <div class="card map-card">
-      ${zoneBadgeHtml}
-      ${mapHtml}
-      ${legendHtml}
-    </div>
-    <div class="card elevation-card">
-      <h3>The same route, laid out flat (height above sea level)${zoneBadgeHtml ? ` ${zoneBadgeHtml}` : ''}</h3>
-      ${elevationSvg}
-    </div>
-  </section>
-
-  ${activityTableHtml}
-
   <section class="panels-section">
     <div class="section-head">
       <p class="eyebrow">Two workouts, one ride</p>
@@ -388,6 +373,25 @@ function buildReportHtml(data) {
       </div>
     </div>
   </section>
+
+  <section class="map-section">
+    <div class="section-head">
+      <p class="eyebrow">Your route, colour-coded</p>
+      <h2>Where the workout changed</h2>
+      <p>${routeIntro}</p>
+    </div>
+    <div class="card map-card">
+      ${zoneBadgeHtml}
+      ${mapHtml}
+      ${legendHtml}
+    </div>
+    <div class="card elevation-card">
+      <h3>The same route, laid out flat (height above sea level)${zoneBadgeHtml ? ` ${zoneBadgeHtml}` : ''}</h3>
+      ${elevationSvg}
+    </div>
+  </section>
+
+  ${activityTableHtml}
 
   ${trainingValueHtml}
 
