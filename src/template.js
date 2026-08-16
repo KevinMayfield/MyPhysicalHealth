@@ -1,6 +1,7 @@
 const { css } = require('./style');
 const icons = require('./icons');
-const { formatDistanceKm, formatDuration, formatInt, formatDate, escapeHtml } = require('./format');
+const { formatDistanceKm, formatDuration, formatInt, formatDate, formatActivityLabel, escapeHtml } = require('./format');
+const { EFFORT_COLORS, EFFORT_LABELS } = require('./effortColors');
 
 function statCell(value, unit, label) {
   return `<div class="stat"><div><span class="value">${value}</span>${unit ? `<span class="unit">${unit}</span>` : ''}</div><div class="label">${label}</div></div>`;
@@ -32,8 +33,18 @@ function buildReportHtml(data) {
     elevationSvg,
     cardio,
     strength,
+    recovery,
     cardioName,
     strengthName,
+    effortSource,
+    activityType,
+    powerSummary,
+    hrSummary,
+    ageSummary,
+    lowValueSpots,
+    bonkEpisodes,
+    decoupleOnset,
+    peakHrOverall,
     includeToolbar,
     pdfHref,
   } = data;
@@ -43,10 +54,234 @@ function buildReportHtml(data) {
   const cardioSpotLabel = cardioName ? escapeHtml(cardioName) : 'the flat stretch';
   const strengthSpotLabel = strengthName ? escapeHtml(strengthName) : 'the climb';
 
+  const mapAlt = effortSource ? 'Route map coloured by effort' : 'Route map coloured by workout type';
   const mapHtml = mapResult.usedBasemap
-    ? `<img src="${mapResult.dataUrl}" alt="Route map coloured by workout type" />
+    ? `<img src="${mapResult.dataUrl}" alt="${mapAlt}" />
        <p class="map-attribution">Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</p>`
     : mapResult.svgMarkup;
+
+  const effortMetric = effortSource === 'power' ? 'power' : 'heart rate';
+  const routeIntro = effortSource
+    ? `This is the route from the ride, coloured by how hard you were working, based on
+        your ${effortMetric} — from easiest (blue) to hardest (red). Two spots stand out.`
+    : `This is the route from the ride, with each stretch coloured by what kind of
+        effort it was. Two spots stand out.`;
+
+  const zoneBadgeLabel = effortSource === 'power' ? 'FTP zones' : effortSource === 'hr' ? 'LTHR zones' : null;
+  const zoneBadgeHtml = zoneBadgeLabel ? `<span class="zone-badge">${zoneBadgeLabel}</span>` : '';
+
+  const hasLowValueSpots = Boolean(lowValueSpots && lowValueSpots.length);
+  const hasJunctionSpots = Boolean(lowValueSpots && lowValueSpots.some((s) => s.possibleJunction));
+  const hasBonkSpots = Boolean(bonkEpisodes && bonkEpisodes.length);
+  const lowValueLegendHtml =
+    hasLowValueSpots || hasBonkSpots
+      ? `<div class="legend low-value-legend">
+        ${hasLowValueSpots ? `<span class="swatch"><span class="icon-chip low-value">${icons.lowValueDot}</span>Low training value</span>` : ''}
+        ${hasJunctionSpots ? `<span class="swatch"><span class="icon-chip junction">${icons.junctionFlag}</span>Possible junction / rough patch</span>` : ''}
+        ${hasBonkSpots ? `<span class="swatch"><span class="icon-chip bonk">${icons.bonkDiamond}</span>Possible bonk</span>` : ''}
+      </div>`
+      : '';
+
+  const legendHtml = effortSource
+    ? `<div class="legend effort-legend">
+        ${EFFORT_COLORS.map((color, i) => `<span class="swatch"><span class="dot" style="background:${color}"></span>${EFFORT_LABELS[i]}</span>`).join('')}
+      </div>
+      ${lowValueLegendHtml}`
+    : `<div class="legend">
+        <span class="swatch"><span class="dot" style="background:var(--cardio)"></span>Cardio — flat &amp; rolling</span>
+        <span class="swatch"><span class="dot" style="background:var(--strength)"></span>Strength — climbing</span>
+        <span class="swatch"><span class="dot" style="background:var(--recovery)"></span>Recovery</span>
+      </div>
+      ${lowValueLegendHtml}`;
+
+  const activityLabel = formatActivityLabel(activityType);
+
+  const NHS_MODERATE_TARGET_MIN = 150;
+  const NHS_VIGOROUS_TARGET_MIN = 75;
+
+  function nhsLine(moderateS, vigorousS) {
+    const moderatePct = Math.round((moderateS / 60 / NHS_MODERATE_TARGET_MIN) * 100);
+    const vigorousPct = Math.round((vigorousS / 60 / NHS_VIGOROUS_TARGET_MIN) * 100);
+    return `<p class="table-nhs">This ride alone covers <strong>${moderatePct}%</strong> of the NHS weekly moderate-activity
+      goal (${NHS_MODERATE_TARGET_MIN} min) and <strong>${vigorousPct}%</strong> of the vigorous-activity goal
+      (${NHS_VIGOROUS_TARGET_MIN} min), for adults aged 19-64.</p>`;
+  }
+
+  function activityTableCard(label, basisText, moderateS, vigorousS) {
+    return `<div class="card table-card">
+      <p class="table-basis"><strong>${label}</strong> — ${basisText}</p>
+      <div class="table-scroll">
+        <table class="activity-table">
+          <thead>
+            <tr>
+              <th>Activity</th>
+              <th>Duration</th>
+              <th>Moderate</th>
+              <th>Vigorous</th>
+              <th>Avg HR</th>
+              <th>Peak HR</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>${escapeHtml(activityLabel)}</td>
+              <td>${formatDuration(totalDurationS)}</td>
+              <td>${formatDuration(moderateS)}</td>
+              <td>${formatDuration(vigorousS)}</td>
+              <td>${avgHrOverall ? `${formatInt(avgHrOverall)} bpm` : '—'}</td>
+              <td>${peakHrOverall ? `${formatInt(peakHrOverall)} bpm` : '—'}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      ${nhsLine(moderateS, vigorousS)}
+    </div>`;
+  }
+
+  const tableCards = [];
+  if (powerSummary) {
+    tableCards.push(
+      activityTableCard(
+        'Power zones',
+        `FTP estimate ${formatInt(powerSummary.ftp)}W — 95% of your best 20-minute power this ride`,
+        powerSummary.moderateS,
+        powerSummary.vigorousS
+      )
+    );
+  }
+  if (hrSummary) {
+    tableCards.push(
+      activityTableCard(
+        'Heart-rate zones',
+        `LTHR estimate ${formatInt(hrSummary.lthr)} bpm — 88% of your peak heart rate this ride`,
+        hrSummary.moderateS,
+        hrSummary.vigorousS
+      )
+    );
+  }
+  if (ageSummary) {
+    tableCards.push(
+      activityTableCard(
+        'Age-based heart-rate zones',
+        `LTHR estimate ${formatInt(ageSummary.lthr)} bpm — 88% of an age-estimated max HR of ${formatInt(ageSummary.maxHrEstimated)} bpm (Tanaka formula)`,
+        ageSummary.moderateS,
+        ageSummary.vigorousS
+      )
+    );
+  }
+  if (tableCards.length === 0) {
+    tableCards.push(`<div class="card table-card">
+      <p class="table-basis"><strong>No effort data</strong> — this ride has no power or heart-rate data to build zones from</p>
+      <div class="table-scroll">
+        <table class="activity-table">
+          <thead>
+            <tr>
+              <th>Activity</th>
+              <th>Duration</th>
+              <th>Moderate</th>
+              <th>Vigorous</th>
+              <th>Avg HR</th>
+              <th>Peak HR</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>${escapeHtml(activityLabel)}</td>
+              <td>${formatDuration(totalDurationS)}</td>
+              <td>—</td>
+              <td>—</td>
+              <td>${avgHrOverall ? `${formatInt(avgHrOverall)} bpm` : '—'}</td>
+              <td>${peakHrOverall ? `${formatInt(peakHrOverall)} bpm` : '—'}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>`);
+  }
+
+  const activityTableHtml = `<section class="activity-summary">
+    <div class="section-head">
+      <p class="eyebrow">Physical activity summary</p>
+      <h2>Moderate vs vigorous effort, at a glance</h2>
+      <p>Zones 2-3 (green/yellow) count as moderate — "cardio" — activity; zones 4-5
+        (orange/red) count as vigorous.${tableCards.length > 1 ? ' Power, heart rate and age-based zones can each give a slightly different picture of effort, so every one available is shown below.' : ''}</p>
+    </div>
+    ${tableCards.join('')}
+  </section>`;
+
+  function lowValueItem(spot) {
+    const iconHtml = spot.possibleJunction ? icons.junctionFlag : icons.lowValueDot;
+    const chipClass = spot.possibleJunction ? 'junction' : 'low-value';
+    const whereText = spot.name
+      ? `near ${escapeHtml(spot.name)} (${spot.atDistanceKm.toFixed(1)} km into the ride)`
+      : `around ${spot.atDistanceKm.toFixed(1)} km into the ride`;
+    return `<li class="low-value-item">
+      <span class="icon-chip ${chipClass}">${iconHtml}</span>
+      <div>
+        <strong>${formatDuration(spot.durationS)}</strong> ${whereText}
+        ${spot.possibleJunction ? '<span class="tag">possibly a junction, lights, or a rough patch</span>' : ''}
+      </div>
+    </li>`;
+  }
+
+  const trainingValueHtml = !effortSource
+    ? ''
+    : `<section class="training-value">
+    <div class="section-head">
+      <p class="eyebrow">Training value check</p>
+      <h2>Stretches that cost you training value</h2>
+      <p>These are spots that sat in Zone 1 — your easiest zone — on ground that was flat or
+        only gently downhill, so gravity wasn't doing the work either. Zone 1 straight after a
+        hard effort is normal recovery and doesn't count here. The first and last 200m are
+        skipped for privacy.</p>
+    </div>
+    <div class="card">
+      ${
+        lowValueSpots && lowValueSpots.length
+          ? `<ul class="low-value-list">${lowValueSpots.map(lowValueItem).join('')}</ul>`
+          : `<p class="low-value-empty">Nice — no significant low-value stretches spotted. You made good use of
+              nearly every minute out there.</p>`
+      }
+    </div>
+  </section>`;
+
+  function whereDescription(name, atKm) {
+    return name ? `near ${escapeHtml(name)} (${atKm.toFixed(1)} km into the ride)` : `around ${atKm.toFixed(1)} km into the ride`;
+  }
+
+  function bonkItem(ep) {
+    const severityLabel = ep.severity.charAt(0).toUpperCase() + ep.severity.slice(1);
+    return `<li class="low-value-item">
+      <span class="icon-chip bonk">${icons.bonkDiamond}</span>
+      <div>
+        <strong>${formatDuration(ep.durationS)}</strong> ${whereDescription(ep.name, ep.atStartKm)}
+        <span class="tag">${severityLabel}</span>
+      </div>
+    </li>`;
+  }
+
+  const bonkHtml =
+    !bonkEpisodes || !bonkEpisodes.length
+      ? ''
+      : `<section class="bonk-check">
+    <div class="section-head">
+      <p class="eyebrow">Fuel check</p>
+      <h2>Signs you may have bonked</h2>
+      <p>A bonk is an extended, non-recovering crash in output — even on ground that should
+        let you push harder — usually from running low on fuel. Zone 1 straight after a hard
+        effort doesn't count here; this only flags stretches that never really came back.</p>
+    </div>
+    <div class="card">
+      <ul class="low-value-list">${bonkEpisodes.map(bonkItem).join('')}</ul>
+      ${
+        decoupleOnset
+          ? `<p class="decouple-note">Signs of this may have started earlier than the crash itself:
+              your power began dropping relative to your heart rate ${whereDescription(decoupleOnset.name, decoupleOnset.atKm)}
+              — a classic early warning that fuel was running low.</p>`
+          : ''
+      }
+    </div>
+  </section>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -76,22 +311,20 @@ function buildReportHtml(data) {
     <div class="section-head">
       <p class="eyebrow">Your route, colour-coded</p>
       <h2>Where the workout changed</h2>
-      <p>This is the route from the ride, with each stretch coloured by what kind of
-        effort it was. Two spots stand out.</p>
+      <p>${routeIntro}</p>
     </div>
     <div class="card map-card">
+      ${zoneBadgeHtml}
       ${mapHtml}
-      <div class="legend">
-        <span class="swatch"><span class="dot" style="background:var(--cardio)"></span>Cardio — flat &amp; rolling</span>
-        <span class="swatch"><span class="dot" style="background:var(--strength)"></span>Strength — climbing</span>
-        <span class="swatch"><span class="dot" style="background:var(--recovery)"></span>Recovery — coasting down</span>
-      </div>
+      ${legendHtml}
     </div>
     <div class="card elevation-card">
-      <h3>The same route, laid out flat (height above sea level)</h3>
+      <h3>The same route, laid out flat (height above sea level)${zoneBadgeHtml ? ` ${zoneBadgeHtml}` : ''}</h3>
       ${elevationSvg}
     </div>
   </section>
+
+  ${activityTableHtml}
 
   <section class="panels-section">
     <div class="section-head">
@@ -132,7 +365,23 @@ function buildReportHtml(data) {
         </div>
       </div>
     </div>
+    <div class="panel recovery">
+      <div class="icon">${icons.wind}</div>
+      <h3>Recovery</h3>
+      <p class="copy">On the descents, you eased off and let gravity do the work —
+        a breather for your legs and a chance for your heart rate to settle before
+        the next effort.</p>
+      <div class="stat-row">
+        ${panelStat(formatDuration(recovery.durationS), 'Time spent')}
+        ${panelStat(recovery.avgHr ? `${formatInt(recovery.avgHr)} bpm` : '—', 'Avg heart rate')}
+        ${panelStat(`${recovery.avgSpeedKmh.toFixed(1)} km/h`, 'Pace')}
+      </div>
+    </div>
   </section>
+
+  ${trainingValueHtml}
+
+  ${bonkHtml}
 
   <section class="benefits">
     <div class="section-head">

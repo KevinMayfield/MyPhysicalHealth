@@ -6,9 +6,28 @@ const { renderPdf, shutdown } = require('./pdf');
 
 const PORT = process.env.PORT || 3000;
 const REPORT_TTL_MS = 60 * 60 * 1000;
+const AGE_COOKIE_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+
+function parseCookies(header) {
+  const cookies = {};
+  if (!header) return cookies;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    const key = part.slice(0, eq).trim();
+    const value = part.slice(eq + 1).trim();
+    if (key) cookies[key] = decodeURIComponent(value);
+  }
+  return cookies;
+}
+
+function parseAge(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 5 && n <= 110 ? Math.round(n) : null;
+}
 
 /** @type {Map<string, { rideName: string, html: string, createdAt: number }>} */
 const reports = new Map();
@@ -21,6 +40,9 @@ function cleanupExpiredReports() {
 }
 
 app.get('/', (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const savedAge = parseAge(cookies.age);
+
   res.type('html').send(`<!doctype html>
 <html lang="en">
 <head>
@@ -32,7 +54,11 @@ app.get('/', (req, res) => {
   .card { background: #fdfbf3; border-radius: 20px; box-shadow: 0 8px 24px rgba(38,38,32,0.08); padding: 40px; max-width: 420px; width: 90%; text-align: center; }
   h1 { font-size: 24px; margin-bottom: 8px; }
   p { color: #6f6c5f; line-height: 1.5; margin-bottom: 24px; }
-  input[type="file"] { display: block; width: 100%; margin-bottom: 20px; }
+  .field { text-align: left; margin-bottom: 20px; }
+  label { display: block; font-size: 13px; font-weight: 600; color: #6f6c5f; margin-bottom: 6px; }
+  input[type="file"], input[type="number"] { display: block; width: 100%; box-sizing: border-box; }
+  input[type="number"] { border: 1px solid rgba(38,38,32,0.2); border-radius: 10px; padding: 10px 12px; font-size: 15px; }
+  .hint { font-size: 12px; color: #948f7f; margin-top: 6px; }
   button { background: #262620; color: #fdfbf3; border: none; border-radius: 999px; padding: 12px 28px; font-size: 15px; font-weight: 700; cursor: pointer; }
   button:disabled { opacity: 0.6; }
   .error { color: #c1502f; margin-bottom: 16px; }
@@ -46,7 +72,15 @@ app.get('/', (req, res) => {
       cardio and strength sides of your ride, with a map, elevation profile, and a
       downloadable PDF.</p>
     <form id="form" method="post" action="/generate" enctype="multipart/form-data">
-      <input type="file" name="gpxfile" accept=".gpx" required />
+      <div class="field">
+        <label for="gpxfile">GPX file</label>
+        <input type="file" id="gpxfile" name="gpxfile" accept=".gpx" required />
+      </div>
+      <div class="field">
+        <label for="age">Your age (optional)</label>
+        <input type="number" id="age" name="age" min="5" max="110" placeholder="e.g. 42" value="${savedAge ?? ''}" />
+        <p class="hint">Used to estimate a heart-rate zone from your age (Tanaka formula). Remembered on this device via a cookie — never sent anywhere else.</p>
+      </div>
       <button type="submit">Generate report</button>
     </form>
     <div id="status"></div>
@@ -68,9 +102,13 @@ app.post('/generate', upload.single('gpxfile'), async (req, res) => {
   }
   try {
     cleanupExpiredReports();
+    const age = parseAge(req.body.age);
+    if (age !== null) {
+      res.cookie('age', String(age), { maxAge: AGE_COOKIE_MAX_AGE_MS, httpOnly: true, sameSite: 'lax' });
+    }
     const xml = req.file.buffer.toString('utf8');
     const id = crypto.randomUUID();
-    const { html, rideName } = await generateReportHtml(xml, { includeToolbar: true, pdfHref: `/report/${id}/pdf` });
+    const { html, rideName } = await generateReportHtml(xml, { includeToolbar: true, pdfHref: `/report/${id}/pdf`, age });
     reports.set(id, { rideName, html, createdAt: Date.now() });
     res.redirect(`/report/${id}`);
   } catch (err) {

@@ -19,8 +19,8 @@ function num(value) {
 
 /**
  * Parses a GPX 1.1 (Strava export style) buffer/string into an ordered
- * array of trackpoints: { lat, lon, ele, time (Date), hr, cad, atemp }.
- * HR/cadence/temp are optional per point and may be undefined.
+ * array of trackpoints: { lat, lon, ele, time (Date), hr, cad, atemp, power }.
+ * HR/cadence/temp/power are optional per point and may be undefined.
  */
 function parseGpx(xml) {
   const doc = parser.parse(xml);
@@ -31,6 +31,7 @@ function parseGpx(xml) {
   if (tracks.length === 0) throw new Error('GPX file has no tracks');
 
   const name = tracks[0].name ? String(tracks[0].name) : undefined;
+  const activityType = tracks[0].type ? String(tracks[0].type) : undefined;
 
   const points = [];
   for (const trk of tracks) {
@@ -46,6 +47,7 @@ function parseGpx(xml) {
         let hr;
         let cad;
         let atemp;
+        let power;
         const ext = pt.extensions;
         if (ext) {
           const tpe = ext['gpxtpx:TrackPointExtension'];
@@ -54,16 +56,17 @@ function parseGpx(xml) {
             cad = num(tpe['gpxtpx:cad']);
             atemp = num(tpe['gpxtpx:atemp']);
           }
+          power = num(ext.power);
         }
 
-        points.push({ lat, lon, ele, time, hr, cad, atemp });
+        points.push({ lat, lon, ele, time, hr, cad, atemp, power });
       }
     }
   }
 
   if (points.length === 0) throw new Error('GPX file has no trackpoints');
 
-  return { name, points };
+  return { name, activityType, points };
 }
 
 module.exports = { parseGpx };

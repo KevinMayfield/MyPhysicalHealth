@@ -45,4 +45,19 @@ async function geocodeHighlights(highlightClimb, highlightFlat) {
   return { climbName, flatName };
 }
 
-module.exports = { reverseGeocode, geocodeHighlights };
+/**
+ * Reverse-geocodes a list of {lat, lon} spots in sequence, spaced out to
+ * respect Nominatim's ~1 request/second usage policy. Returns the same
+ * spots with a `name` field added (null where the lookup fails).
+ */
+async function geocodeSpots(spots) {
+  const named = [];
+  for (let i = 0; i < spots.length; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 1100));
+    const name = await reverseGeocode(spots[i].lat, spots[i].lon);
+    named.push({ ...spots[i], name });
+  }
+  return named;
+}
+
+module.exports = { reverseGeocode, geocodeHighlights, geocodeSpots };

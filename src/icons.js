@@ -16,4 +16,16 @@ const balance =
 const bolt =
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" fill="currentColor"/></svg>';
 
-module.exports = { heart, dumbbell, muscle, bone, balance, bolt };
+const wind =
+  '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 8h11a3 3 0 1 0-2.5-4.7M3 13h15a3 3 0 1 1-2.5 4.7M3 18h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+const lowValueDot =
+  '<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="7" fill="currentColor" stroke="#fffaf0" stroke-width="1.5"/><text x="8" y="11.5" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="800" fill="#fffaf0" text-anchor="middle">&#8722;</text></svg>';
+
+const junctionFlag =
+  '<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><polygon points="8,1.5 1,14 15,14" fill="currentColor" stroke="#fffaf0" stroke-width="1.5" stroke-linejoin="round"/><text x="8" y="13" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="800" fill="#fffaf0" text-anchor="middle">!</text></svg>';
+
+const bonkDiamond =
+  '<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><polygon points="8,1 15,8 8,15 1,8" fill="currentColor" stroke="#fffaf0" stroke-width="1.5" stroke-linejoin="round"/><text x="8" y="11.5" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="800" fill="#fffaf0" text-anchor="middle">&#8595;</text></svg>';
+
+module.exports = { heart, dumbbell, muscle, bone, balance, bolt, wind, lowValueDot, junctionFlag, bonkDiamond };

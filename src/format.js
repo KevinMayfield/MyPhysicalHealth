@@ -19,6 +19,12 @@ function formatDate(date) {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+function formatActivityLabel(type) {
+  if (!type) return 'Cycling';
+  const cleaned = type.replace(/[_-]+/g, ' ').trim();
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -27,4 +33,4 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-module.exports = { formatDistanceKm, formatDuration, formatInt, formatDate, escapeHtml };
+module.exports = { formatDistanceKm, formatDuration, formatInt, formatDate, formatActivityLabel, escapeHtml };

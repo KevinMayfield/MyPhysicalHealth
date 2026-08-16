@@ -1,6 +1,6 @@
 const { parseGpx } = require('./gpx');
 const { analyseRide } = require('./analysis');
-const { geocodeHighlights } = require('./geocode');
+const { geocodeHighlights, geocodeSpots } = require('./geocode');
 const { renderRouteMap } = require('./map');
 const { buildElevationSvg } = require('./elevationProfile');
 const { buildReportHtml } = require('./template');
@@ -9,10 +9,10 @@ const { buildReportHtml } = require('./template');
  * Runs the full GPX-to-poster pipeline and returns the finished
  * self-contained HTML report string.
  */
-async function generateReportHtml(gpxXml, { includeToolbar = false, pdfHref = '' } = {}) {
-  const { name, points } = parseGpx(gpxXml);
+async function generateReportHtml(gpxXml, { includeToolbar = false, pdfHref = '', age = null } = {}) {
+  const { name, activityType, points } = parseGpx(gpxXml);
   const rideName = name || 'Untitled ride';
-  const analysis = analyseRide(points);
+  const analysis = analyseRide(points, { age });
 
   const { climbName, flatName } = await geocodeHighlights(analysis.highlightClimb, analysis.highlightFlat);
 
@@ -21,7 +21,18 @@ async function generateReportHtml(gpxXml, { includeToolbar = false, pdfHref = ''
     flat: analysis.highlightFlat && { ...analysis.highlightFlat, name: flatName },
   };
 
-  const mapResult = await renderRouteMap(points, analysis.segments, highlights);
+  const lowValueSpotsNamed = await geocodeSpots(analysis.lowValueSpots);
+  const bonkEpisodesNamed = await geocodeSpots(analysis.bonkEpisodes);
+  const decoupleOnsetNamed = analysis.decoupleOnset ? (await geocodeSpots([analysis.decoupleOnset]))[0] : null;
+
+  const mapResult = await renderRouteMap(
+    points,
+    analysis.segments,
+    analysis.effortSegments,
+    highlights,
+    analysis.lowValueSpots,
+    analysis.bonkEpisodes
+  );
   const elevationSvg = buildElevationSvg(points, analysis);
 
   const totalClimbM = analysis.stats.cardio.elevGainM + analysis.stats.strength.elevGainM + analysis.stats.recovery.elevGainM;
@@ -40,8 +51,19 @@ async function generateReportHtml(gpxXml, { includeToolbar = false, pdfHref = ''
     elevationSvg,
     cardio: analysis.stats.cardio,
     strength: analysis.stats.strength,
+    recovery: analysis.stats.recovery,
     cardioName: flatName,
     strengthName: climbName,
+    effortSource: analysis.effortSource,
+    effortThreshold: analysis.effortThreshold,
+    activityType,
+    powerSummary: analysis.powerSummary,
+    hrSummary: analysis.hrSummary,
+    ageSummary: analysis.ageSummary,
+    lowValueSpots: lowValueSpotsNamed,
+    bonkEpisodes: bonkEpisodesNamed,
+    decoupleOnset: decoupleOnsetNamed,
+    peakHrOverall: analysis.peakHr,
     includeToolbar,
     pdfHref,
   });
