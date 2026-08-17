@@ -793,4 +793,12 @@ function analyseRide(points, { age, ftp, lthr } = {}) {
   };
 }
 
-module.exports = { analyseRide, haversineMeters };
+module.exports = {
+  analyseRide,
+  haversineMeters,
+  hrZone,
+  powerZone,
+  LTHR_FROM_MAXHR_FACTOR,
+  TANAKA_MAXHR_INTERCEPT,
+  TANAKA_MAXHR_AGE_FACTOR,
+};

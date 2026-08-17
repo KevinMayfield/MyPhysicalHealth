@@ -9,8 +9,17 @@ const { buildReportHtml } = require('./template');
  * Runs the full GPX-to-poster pipeline and returns the finished
  * self-contained HTML report string.
  */
-async function generateReportHtml(gpxXml, { includeToolbar = false, pdfHref = '', age = null, ftp = null, lthr = null } = {}) {
+async function generateReportHtml(gpxXml, options = {}) {
   const { name, activityType, points } = parseGpx(gpxXml);
+  return generateReportHtmlFromPoints({ name, activityType, points }, options);
+}
+
+/**
+ * Same pipeline as generateReportHtml, but starting from an already-
+ * parsed {name, activityType, points} triple instead of raw GPX XML —
+ * shared by the GPX upload flow and the Strava import flow.
+ */
+async function generateReportHtmlFromPoints({ name, activityType, points }, { includeToolbar = false, pdfHref = '', age = null, ftp = null, lthr = null } = {}) {
   const rideName = name || 'Untitled ride';
   const analysis = analyseRide(points, { age, ftp, lthr });
 
@@ -74,4 +83,4 @@ async function generateReportHtml(gpxXml, { includeToolbar = false, pdfHref = ''
   return { html, rideName };
 }
 
-module.exports = { generateReportHtml };
+module.exports = { generateReportHtml, generateReportHtmlFromPoints };
