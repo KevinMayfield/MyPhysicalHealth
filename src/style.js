@@ -446,6 +446,7 @@ footer {
   right: 24px;
   bottom: 24px;
   display: flex;
+  gap: 10px;
   justify-content: center;
   margin-top: 8px;
 }
@@ -460,6 +461,9 @@ footer {
   text-decoration: none;
   box-shadow: var(--shadow);
   cursor: pointer;
+}
+.btn.strava-btn {
+  background: #fc4c02;
 }
 
 @media (max-width: 600px) {

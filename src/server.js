@@ -187,6 +187,8 @@ const PAGE_STYLE = `
   th, td { text-align: left; padding: 10px 8px; font-size: 14px; border-bottom: 1px solid rgba(38,38,32,0.08); }
   th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #948f7f; }
   .gen-link { color: #c1502f; font-weight: 700; text-decoration: none; flex-shrink: 0; }
+  .activity-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+  .strava-link { color: #fc4c02; font-weight: 600; font-size: 12px; text-decoration: none; }
   .muted { color: #948f7f; }
   .activity-card { border: 1px solid rgba(38,38,32,0.08); border-radius: 14px; padding: 18px; margin-bottom: 14px; }
   .activity-card:last-child { margin-bottom: 0; }
@@ -410,7 +412,10 @@ app.get('/', async (req, res) => {
                 <strong>${escapeHtml(a.name)}</strong>
                 <div class="activity-meta">${date} · ${escapeHtml(a.type)} · ${km} km</div>
               </div>
-              ${genLink}
+              <div class="activity-actions">
+                ${genLink}
+                <a class="strava-link" href="https://www.strava.com/activities/${a.id}" target="_blank" rel="noopener">View on Strava</a>
+              </div>
             </div>
             ${elevationSvg ? `<div class="activity-elevation">${elevationSvg}</div>` : ''}
             ${bodyHtml}
@@ -656,7 +661,7 @@ app.get('/strava/generate/:activityId', async (req, res) => {
     const id = crypto.randomUUID();
     const { html, rideName } = await generateReportHtmlFromPoints(
       { name: activity.name, activityType: activity.type, points },
-      { includeToolbar: true, pdfHref: `/report/${id}/pdf`, age, ftp, lthr }
+      { includeToolbar: true, pdfHref: `/report/${id}/pdf`, age, ftp, lthr, stravaActivityId: activity.id }
     );
     reports.set(id, { rideName, html, createdAt: Date.now() });
     res.redirect(`/report/${id}`);

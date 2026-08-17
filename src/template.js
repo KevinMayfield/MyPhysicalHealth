@@ -47,7 +47,10 @@ function buildReportHtml(data) {
     peakHrOverall,
     includeToolbar,
     pdfHref,
+    stravaActivityId,
   } = data;
+
+  const stravaUrl = stravaActivityId ? `https://www.strava.com/activities/${encodeURIComponent(stravaActivityId)}` : null;
 
   const cardioSpot = cardioName || 'the flattest stretch of the ride';
   const strengthSpot = strengthName || 'the steepest climb of the ride';
@@ -440,7 +443,14 @@ function buildReportHtml(data) {
   <footer>${escapeHtml(rideName)} · recorded ride, ${formatDate(rideDate)}</footer>
 
 </div>
-${includeToolbar ? `<div class="toolbar no-print"><a class="btn" href="${pdfHref}">Download PDF</a></div>` : ''}
+${
+  includeToolbar
+    ? `<div class="toolbar no-print">
+        ${stravaUrl ? `<a class="btn strava-btn" href="${stravaUrl}" target="_blank" rel="noopener">View on Strava</a>` : ''}
+        <a class="btn" href="${pdfHref}">Download PDF</a>
+      </div>`
+    : ''
+}
 <script>
   document.querySelectorAll('.map-zoom-wrap').forEach(function (wrap) {
     var target = wrap.querySelector('.map-zoom-target');

@@ -19,7 +19,10 @@ async function generateReportHtml(gpxXml, options = {}) {
  * parsed {name, activityType, points} triple instead of raw GPX XML —
  * shared by the GPX upload flow and the Strava import flow.
  */
-async function generateReportHtmlFromPoints({ name, activityType, points }, { includeToolbar = false, pdfHref = '', age = null, ftp = null, lthr = null } = {}) {
+async function generateReportHtmlFromPoints(
+  { name, activityType, points },
+  { includeToolbar = false, pdfHref = '', age = null, ftp = null, lthr = null, stravaActivityId = null } = {}
+) {
   const rideName = name || 'Untitled ride';
   const analysis = analyseRide(points, { age, ftp, lthr });
 
@@ -78,6 +81,7 @@ async function generateReportHtmlFromPoints({ name, activityType, points }, { in
     peakHrOverall: analysis.peakHr,
     includeToolbar,
     pdfHref,
+    stravaActivityId,
   });
 
   return { html, rideName };
