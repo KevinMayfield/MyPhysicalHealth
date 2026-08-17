@@ -59,6 +59,10 @@ function resolveActivityLthr(activity, savedLthr, savedAge) {
 }
 
 const app = express();
+// Behind a reverse proxy (Fly.io, Render, etc.) the app only ever sees plain
+// HTTP internally — trust X-Forwarded-Proto so req.protocol (used to build
+// the Strava OAuth redirect URI) reports "https" correctly in production.
+app.set('trust proxy', true);
 app.use(express.urlencoded({ extended: false }));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
@@ -305,7 +309,12 @@ app.get('/', async (req, res) => {
                     vigorousS: analysis.hrSummary.vigorousS,
                   }
                 : null;
-            return { bd, elevationSvg: buildElevationSvg(points, analysis, 560, 140) };
+            // Defaults to LTHR (heart-rate) zones when present, falling back
+            // to the ride's primary effort metric (power, or terrain) otherwise.
+            const elevationSvg = analysis.hrZoneSegments
+              ? buildElevationSvg(points, analysis, 560, 140, analysis.hrZoneSegments)
+              : buildElevationSvg(points, analysis, 560, 140);
+            return { bd, elevationSvg };
           } catch (err) {
             console.error(`Activity analysis failed for activity ${a.id}:`, err.message);
             return { bd: null, elevationSvg: null };

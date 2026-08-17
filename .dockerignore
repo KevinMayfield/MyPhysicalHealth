@@ -1,0 +1,8 @@
+node_modules
+*.log
+.env
+.strava-sessions.json
+.git
+.idea
+GPXExamples
+ReportExamples

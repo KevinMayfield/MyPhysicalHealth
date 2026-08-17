@@ -48,7 +48,18 @@ async function generateReportHtmlFromPoints(
     analysis.mapStartIdx,
     analysis.mapEndIdx
   );
-  const elevationSvg = buildElevationSvg(points, analysis);
+  // The flat elevation chart defaults to LTHR (heart-rate) zones when
+  // available; otherwise it falls back to the ride's primary effort
+  // metric (power, if present) or plain terrain colouring. A second FTP
+  // (power) zones chart is only added when both metrics are present,
+  // since otherwise it would just duplicate the primary chart.
+  const elevationSvg = analysis.hrZoneSegments
+    ? buildElevationSvg(points, analysis, 880, 220, analysis.hrZoneSegments)
+    : buildElevationSvg(points, analysis);
+  const elevationSvgFtp =
+    analysis.hrZoneSegments && analysis.powerZoneSegments
+      ? buildElevationSvg(points, analysis, 880, 220, analysis.powerZoneSegments)
+      : null;
 
   const totalClimbM = analysis.stats.cardio.elevGainM + analysis.stats.strength.elevGainM + analysis.stats.recovery.elevGainM;
 
@@ -64,6 +75,7 @@ async function generateReportHtmlFromPoints(
     avgHrOverall,
     mapResult,
     elevationSvg,
+    elevationSvgFtp,
     cardio: analysis.stats.cardio,
     strength: analysis.stats.strength,
     recovery: analysis.stats.recovery,

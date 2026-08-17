@@ -31,6 +31,7 @@ function buildReportHtml(data) {
     avgHrOverall,
     mapResult,
     elevationSvg,
+    elevationSvgFtp,
     cardio,
     strength,
     recovery,
@@ -80,6 +81,13 @@ function buildReportHtml(data) {
 
   const zoneBadgeLabel = effortSource === 'power' ? 'FTP zones' : effortSource === 'hr' ? 'LTHR zones' : null;
   const zoneBadgeHtml = zoneBadgeLabel ? `<span class="zone-badge">${zoneBadgeLabel}</span>` : '';
+
+  // The flat elevation chart(s) are labelled independently of the map's
+  // effort colouring above: it defaults to LTHR (heart-rate) zones
+  // whenever HR data is present, with a second FTP (power) zones chart
+  // alongside it when power data is also present.
+  const elevationBadgeLabel = hrSummary ? 'LTHR zones' : powerSummary ? 'FTP zones' : null;
+  const elevationBadgeHtml = elevationBadgeLabel ? `<span class="zone-badge">${elevationBadgeLabel}</span>` : '';
 
   const hasLowValueSpots = Boolean(lowValueSpots && lowValueSpots.length);
   const hasJunctionSpots = Boolean(lowValueSpots && lowValueSpots.some((s) => s.possibleJunction));
@@ -403,9 +411,17 @@ function buildReportHtml(data) {
       ${legendHtml}
     </div>
     <div class="card elevation-card">
-      <h3>The same route, laid out flat (height above sea level)${zoneBadgeHtml ? ` ${zoneBadgeHtml}` : ''}</h3>
+      <h3>The same route, laid out flat (height above sea level)${elevationBadgeHtml ? ` ${elevationBadgeHtml}` : ''}</h3>
       ${elevationSvg}
     </div>
+    ${
+      elevationSvgFtp
+        ? `<div class="card elevation-card">
+      <h3>The same route, laid out flat (height above sea level) <span class="zone-badge">FTP zones</span></h3>
+      ${elevationSvgFtp}
+    </div>`
+        : ''
+    }
   </section>
 
   ${activityTableHtml}

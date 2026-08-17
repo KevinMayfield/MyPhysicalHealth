@@ -776,6 +776,8 @@ function analyseRide(points, { age, ftp, lthr } = {}) {
     effortSegments,
     effortSource,
     effortThreshold,
+    hrZoneSegments: hrZones ? hrZones.segments : null,
+    powerZoneSegments: powerZones ? powerZones.segments : null,
     powerSummary,
     hrSummary,
     ageSummary,

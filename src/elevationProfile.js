@@ -61,12 +61,14 @@ function triangleMarker(x, y, s, color) {
  * Builds an inline SVG elevation profile: distance on x, elevation on y,
  * filled area + line. Coloured by effort (heart rate, or power if HR is
  * absent) when available, matching the map; falls back to the terrain
- * category colours otherwise. Marks any low-value/junction spots, bonk
- * episodes, and the aerobic decoupling onset (if found) along the top,
- * with a guide line down to the profile so they're easy to line up with
- * the climb/descent below.
+ * category colours otherwise. Pass `zoneSegments` to colour by a specific
+ * metric's zones (e.g. analysis.hrZoneSegments or .powerZoneSegments)
+ * instead of the ride's primary effort metric. Marks any low-value/
+ * junction spots, bonk episodes, and the aerobic decoupling onset (if
+ * found) along the top, with a guide line down to the profile so they're
+ * easy to line up with the climb/descent below.
  */
-function buildElevationSvg(points, analysis, width = 880, height = 220) {
+function buildElevationSvg(points, analysis, width = 880, height = 220, zoneSegments) {
   const { dist, smoothEle, segments, effortSegments, lowValueSpots, bonkEpisodes, decoupleOnset } = analysis;
   const n = points.length;
   const hasMarkers = Boolean((lowValueSpots && lowValueSpots.length) || (bonkEpisodes && bonkEpisodes.length) || decoupleOnset);
@@ -83,9 +85,10 @@ function buildElevationSvg(points, analysis, width = 880, height = 220) {
   const yOf = (i) => margin.top + (1 - (smoothEle[i] - minEle) / eleRange) * plotH;
   const baseline = margin.top + plotH;
 
-  const useEffort = effortSegments && effortSegments.length > 0;
+  const segsToUse = zoneSegments || effortSegments;
+  const useEffort = segsToUse && segsToUse.length > 0;
   const colorSegments = useEffort
-    ? effortSegments.map((s) => ({ startIdx: s.startIdx, endIdx: s.endIdx, stroke: EFFORT_COLORS[s.bin], fill: EFFORT_FILL_ALPHA[s.bin] }))
+    ? segsToUse.map((s) => ({ startIdx: s.startIdx, endIdx: s.endIdx, stroke: EFFORT_COLORS[s.bin], fill: EFFORT_FILL_ALPHA[s.bin] }))
     : segments.map((s) => {
         const cat = CATEGORY_BY_CLASS[s.cls];
         return { startIdx: s.startIdx, endIdx: s.endIdx, stroke: COLORS[cat], fill: FILL_ALPHA[cat] };

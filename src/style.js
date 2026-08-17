@@ -262,6 +262,7 @@ section { margin-bottom: 32px; }
   border-top: 1px solid var(--border);
 }
 
+.elevation-card + .elevation-card { margin-top: 16px; }
 .elevation-card h3 {
   display: flex;
   align-items: center;
