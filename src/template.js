@@ -2,6 +2,7 @@ const { css } = require('./style');
 const icons = require('./icons');
 const { formatDistanceKm, formatDuration, formatInt, formatDate, formatActivityLabel, escapeHtml } = require('./format');
 const { EFFORT_COLORS, EFFORT_LABELS } = require('./effortColors');
+const { hrZoneRangeLabels, powerZoneRangeLabels } = require('./analysis');
 
 function statCell(value, unit, label) {
   return `<div class="stat"><div><span class="value">${value}</span>${unit ? `<span class="unit">${unit}</span>` : ''}</div><div class="label">${label}</div></div>`;
@@ -132,19 +133,19 @@ function buildReportHtml(data) {
       (${NHS_VIGOROUS_TARGET_MIN} min), for adults aged 19-64.</p>`;
   }
 
-  function zoneBreakdownTable(zoneSecondsByBin) {
+  function zoneBreakdownTable(zoneSecondsByBin, rangeLabels, unit) {
     if (!zoneSecondsByBin) return '';
     return `<p class="zone-breakdown-label">Time in each zone</p>
       <div class="table-scroll">
         <table class="zone-table">
           <thead>
-            <tr><th>Zone</th><th>Minutes</th></tr>
+            <tr><th>Zone</th><th>Range</th><th>Minutes</th></tr>
           </thead>
           <tbody>
             ${zoneSecondsByBin
               .map(
                 (s, i) =>
-                  `<tr><td><span class="dot" style="background:${EFFORT_COLORS[i]}"></span>${EFFORT_LABELS[i]}</td><td>${formatDuration(s)}</td></tr>`
+                  `<tr><td><span class="dot" style="background:${EFFORT_COLORS[i]}"></span>${EFFORT_LABELS[i]}</td><td>${rangeLabels ? `${rangeLabels[i]} ${unit}` : '—'}</td><td>${formatDuration(s)}</td></tr>`
               )
               .join('')}
           </tbody>
@@ -152,7 +153,7 @@ function buildReportHtml(data) {
       </div>`;
   }
 
-  function activityTableCard(label, basisText, moderateS, vigorousS, zoneSecondsByBin) {
+  function activityTableCard(label, basisText, moderateS, vigorousS, zoneSecondsByBin, rangeLabels, unit) {
     return `<div class="card table-card">
       <p class="table-basis"><strong>${label}</strong> — ${basisText}</p>
       <div class="table-scroll">
@@ -180,7 +181,7 @@ function buildReportHtml(data) {
         </table>
       </div>
       ${nhsLine(moderateS, vigorousS)}
-      ${zoneBreakdownTable(zoneSecondsByBin)}
+      ${zoneBreakdownTable(zoneSecondsByBin, rangeLabels, unit)}
     </div>`;
   }
 
@@ -189,13 +190,33 @@ function buildReportHtml(data) {
     const ftpBasis = powerSummary.isManual
       ? `FTP entered: ${formatInt(powerSummary.ftp)}W`
       : `FTP estimate ${formatInt(powerSummary.ftp)}W — 95% of your best 20-minute power this ride`;
-    tableCards.push(activityTableCard('Power zones', ftpBasis, powerSummary.moderateS, powerSummary.vigorousS, powerSummary.zoneSecondsByBin));
+    tableCards.push(
+      activityTableCard(
+        'Power zones',
+        ftpBasis,
+        powerSummary.moderateS,
+        powerSummary.vigorousS,
+        powerSummary.zoneSecondsByBin,
+        powerZoneRangeLabels(powerSummary.ftp),
+        'W'
+      )
+    );
   }
   if (hrSummary) {
     const lthrBasis = hrSummary.isManual
       ? `LTHR entered: ${formatInt(hrSummary.lthr)} bpm`
       : `LTHR estimate ${formatInt(hrSummary.lthr)} bpm — 88% of your peak heart rate this ride`;
-    tableCards.push(activityTableCard('Heart-rate zones', lthrBasis, hrSummary.moderateS, hrSummary.vigorousS, hrSummary.zoneSecondsByBin));
+    tableCards.push(
+      activityTableCard(
+        'Heart-rate zones',
+        lthrBasis,
+        hrSummary.moderateS,
+        hrSummary.vigorousS,
+        hrSummary.zoneSecondsByBin,
+        hrZoneRangeLabels(hrSummary.lthr),
+        'bpm'
+      )
+    );
   }
   if (ageSummary) {
     tableCards.push(
@@ -204,7 +225,9 @@ function buildReportHtml(data) {
         `LTHR estimate ${formatInt(ageSummary.lthr)} bpm — 88% of an age-estimated max HR of ${formatInt(ageSummary.maxHrEstimated)} bpm (Tanaka formula)`,
         ageSummary.moderateS,
         ageSummary.vigorousS,
-        ageSummary.zoneSecondsByBin
+        ageSummary.zoneSecondsByBin,
+        hrZoneRangeLabels(ageSummary.lthr),
+        'bpm'
       )
     );
   }

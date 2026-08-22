@@ -13,7 +13,7 @@ const { generateReportHtml, generateReportHtmlFromPoints } = require('./pipeline
 const { renderPdf, shutdown } = require('./pdf');
 const strava = require('./strava');
 const { escapeHtml, formatDuration } = require('./format');
-const { analyseRide, LTHR_FROM_MAXHR_FACTOR, TANAKA_MAXHR_INTERCEPT, TANAKA_MAXHR_AGE_FACTOR } = require('./analysis');
+const { analyseRide, hrBucketRangesBpm, LTHR_FROM_MAXHR_FACTOR, TANAKA_MAXHR_INTERCEPT, TANAKA_MAXHR_AGE_FACTOR } = require('./analysis');
 const { buildElevationSvg } = require('./elevationProfile');
 
 const PORT = process.env.PORT || 3000;
@@ -210,6 +210,7 @@ const PAGE_STYLE = `
   .zone-panel { flex: 1; border-radius: 10px; padding: 10px 12px; text-align: center; }
   .zone-panel .value { display: block; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .zone-panel .label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; opacity: 0.85; }
+  .zone-panel .zone-range { text-transform: none; letter-spacing: normal; font-variant-numeric: tabular-nums; opacity: 0.85; }
   .zone-panel .kcal { display: block; font-size: 11px; margin-top: 4px; opacity: 0.75; }
   .weight-row { display: flex; gap: 8px; }
   .weight-row input { flex: 1; }
@@ -299,7 +300,7 @@ app.get('/', async (req, res) => {
           try {
             const streams = await strava.getActivityStreams(accessToken, a.id);
             const points = strava.streamsToPoints(a, streams);
-            if (points.length < 2) return { bd: null, elevationSvg: null };
+            if (points.length < 2) return { bd: null, elevationSvg: null, lthr: null };
             const analysis = analyseRide(points, { ftp: effectiveFtp, lthr: lthr || undefined });
             const bd =
               a.has_heartrate && lthr && analysis.hrSummary
@@ -314,20 +315,20 @@ app.get('/', async (req, res) => {
             const elevationSvg = analysis.hrZoneSegments
               ? buildElevationSvg(points, analysis, 560, 140, analysis.hrZoneSegments)
               : buildElevationSvg(points, analysis, 560, 140);
-            return { bd, elevationSvg };
+            return { bd, elevationSvg, lthr };
           } catch (err) {
             console.error(`Activity analysis failed for activity ${a.id}:`, err.message);
-            return { bd: null, elevationSvg: null };
+            return { bd: null, elevationSvg: null, lthr: null };
           }
         }
 
-        if (!a.has_heartrate || !lthr) return { bd: null, elevationSvg: null };
+        if (!a.has_heartrate || !lthr) return { bd: null, elevationSvg: null, lthr: null };
         try {
           const bd = await strava.getActivityHrBreakdown(accessToken, a.id, lthr);
-          return { bd, elevationSvg: null };
+          return { bd, elevationSvg: null, lthr };
         } catch (err) {
           console.error(`Strava HR breakdown failed for activity ${a.id}:`, err.message);
-          return { bd: null, elevationSvg: null };
+          return { bd: null, elevationSvg: null, lthr: null };
         }
       });
 
@@ -381,6 +382,7 @@ app.get('/', async (req, res) => {
             const moderatePct = (bd.moderateS / totalS) * 100;
             const vigorousPct = (bd.vigorousS / totalS) * 100;
             const cal = effectiveWeightKg ? caloriesForBreakdown(bd, effectiveWeightKg) : null;
+            const ranges = hrBucketRangesBpm(perActivity[i].lthr);
 
             bodyHtml = `
               <div class="zone-bar">
@@ -390,15 +392,18 @@ app.get('/', async (req, res) => {
               </div>
               <div class="zone-panels">
                 <div class="zone-panel zone-panel-recovery">
-                  <span class="value">${formatDuration(bd.recoveryS)}</span><span class="label">Recovery</span>
+                  <span class="value">${formatDuration(bd.recoveryS)}</span>
+                  <span class="label">Recovery${ranges ? ` <span class="zone-range">(&lt;${ranges.recoveryMax} bpm)</span>` : ''}</span>
                   ${cal ? `<span class="kcal">${Math.round(cal.recoveryCal)} kcal</span>` : ''}
                 </div>
                 <div class="zone-panel zone-panel-moderate">
-                  <span class="value">${formatDuration(bd.moderateS)}</span><span class="label">Moderate</span>
+                  <span class="value">${formatDuration(bd.moderateS)}</span>
+                  <span class="label">Moderate${ranges ? ` <span class="zone-range">(${ranges.recoveryMax}-${ranges.moderateMax} bpm)</span>` : ''}</span>
                   ${cal ? `<span class="kcal">${Math.round(cal.moderateCal)} kcal</span>` : ''}
                 </div>
                 <div class="zone-panel zone-panel-vigorous">
-                  <span class="value">${formatDuration(bd.vigorousS)}</span><span class="label">Vigorous</span>
+                  <span class="value">${formatDuration(bd.vigorousS)}</span>
+                  <span class="label">Vigorous${ranges ? ` <span class="zone-range">(&gt;${ranges.moderateMax} bpm)</span>` : ''}</span>
                   ${cal ? `<span class="kcal">${Math.round(cal.vigorousCal)} kcal</span>` : ''}
                 </div>
               </div>

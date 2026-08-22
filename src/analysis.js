@@ -83,16 +83,26 @@ function secondsBetween(a, b) {
   return (b.getTime() - a.getTime()) / 1000;
 }
 
+// Zone 1-5 boundaries, as % of threshold (FTP for power, LTHR for heart
+// rate) — each array holds the upper edge of zones 1-4 (zone 5 is
+// open-ended above the last value). Shared by the 5-zone classifiers, the
+// per-zone bpm/W range labels shown on the full report's zone table, and
+// the 3-bucket bpm ranges shown on the activity list.
+const POWER_ZONE_BOUNDARY_PCTS = [55, 75, 90, 105];
+const HR_ZONE_BOUNDARY_PCTS = [81, 89, 94, 105];
+const HR_RECOVERY_MODERATE_BOUNDARY_PCT = HR_ZONE_BOUNDARY_PCTS[0];
+const HR_MODERATE_VIGOROUS_BOUNDARY_PCT = HR_ZONE_BOUNDARY_PCTS[2];
+
 /**
  * Zone 1-5 from % of FTP (cycling power zones).
  */
 function powerZone(power, ftp) {
   if (!ftp || ftp <= 0) return 3;
   const pct = (power / ftp) * 100;
-  if (pct <= 55) return 1;
-  if (pct <= 75) return 2;
-  if (pct <= 90) return 3;
-  if (pct <= 105) return 4;
+  if (pct <= POWER_ZONE_BOUNDARY_PCTS[0]) return 1;
+  if (pct <= POWER_ZONE_BOUNDARY_PCTS[1]) return 2;
+  if (pct <= POWER_ZONE_BOUNDARY_PCTS[2]) return 3;
+  if (pct <= POWER_ZONE_BOUNDARY_PCTS[3]) return 4;
   return 5;
 }
 
@@ -102,11 +112,44 @@ function powerZone(power, ftp) {
 function hrZone(hr, lthr) {
   if (!lthr || lthr <= 0) return 3;
   const pct = (hr / lthr) * 100;
-  if (pct < 81) return 1;
-  if (pct <= 89) return 2;
-  if (pct <= 94) return 3;
-  if (pct <= 105) return 4;
+  if (pct < HR_ZONE_BOUNDARY_PCTS[0]) return 1;
+  if (pct <= HR_ZONE_BOUNDARY_PCTS[1]) return 2;
+  if (pct <= HR_ZONE_BOUNDARY_PCTS[2]) return 3;
+  if (pct <= HR_ZONE_BOUNDARY_PCTS[3]) return 4;
   return 5;
+}
+
+/**
+ * Display ranges (as raw units, e.g. "142-155") for each of the 5 zones,
+ * given a threshold and its zone boundary percentages. Returns null when
+ * there's no threshold to anchor the ranges to.
+ */
+function zoneRangeLabels(threshold, boundaryPcts) {
+  if (!threshold || threshold <= 0) return null;
+  const b = boundaryPcts.map((pct) => Math.round((threshold * pct) / 100));
+  return [`&lt;${b[0]}`, `${b[0]}-${b[1]}`, `${b[1]}-${b[2]}`, `${b[2]}-${b[3]}`, `&gt;${b[3]}`];
+}
+
+/** Per-zone bpm range labels for the heart-rate zone table, from a rider's LTHR. */
+function hrZoneRangeLabels(lthr) {
+  return zoneRangeLabels(lthr, HR_ZONE_BOUNDARY_PCTS);
+}
+
+/** Per-zone watt range labels for the power zone table, from a rider's FTP. */
+function powerZoneRangeLabels(ftp) {
+  return zoneRangeLabels(ftp, POWER_ZONE_BOUNDARY_PCTS);
+}
+
+/**
+ * bpm boundaries for the recovery/moderate/vigorous buckets shown on the
+ * activity list, derived from a rider's LTHR. Returns null when there's no
+ * LTHR to anchor the ranges to.
+ */
+function hrBucketRangesBpm(lthr) {
+  if (!lthr || lthr <= 0) return null;
+  const recoveryMax = Math.round((lthr * HR_RECOVERY_MODERATE_BOUNDARY_PCT) / 100);
+  const moderateMax = Math.round((lthr * HR_MODERATE_VIGOROUS_BOUNDARY_PCT) / 100);
+  return { recoveryMax, moderateMax };
 }
 
 /**
@@ -799,7 +842,10 @@ module.exports = {
   analyseRide,
   haversineMeters,
   hrZone,
+  hrBucketRangesBpm,
+  hrZoneRangeLabels,
   powerZone,
+  powerZoneRangeLabels,
   LTHR_FROM_MAXHR_FACTOR,
   TANAKA_MAXHR_INTERCEPT,
   TANAKA_MAXHR_AGE_FACTOR,
