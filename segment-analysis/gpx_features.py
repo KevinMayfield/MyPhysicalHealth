@@ -73,7 +73,7 @@ def parse_gpx(path: str | Path) -> tuple[str, pd.DataFrame]:
             continue
         lat = float(trkpt.attrib["lat"])
         lon = float(trkpt.attrib["lon"])
-        ele = hr = cad = power = np.nan
+        ele = hr = cad = power = atemp = np.nan
         time = None
         for child in trkpt:
             tag = _local(child.tag)
@@ -90,9 +90,11 @@ def parse_gpx(path: str | Path) -> tuple[str, pd.DataFrame]:
                         cad = float(ext.text)
                     elif ext_tag == "power" and ext.text:
                         power = float(ext.text)
-        rows.append((lat, lon, ele, time, hr, cad, power))
+                    elif ext_tag == "atemp" and ext.text:
+                        atemp = float(ext.text)
+        rows.append((lat, lon, ele, time, hr, cad, power, atemp))
 
-    df = pd.DataFrame(rows, columns=["lat", "lon", "ele", "time", "hr", "cad", "power"])
+    df = pd.DataFrame(rows, columns=["lat", "lon", "ele", "time", "hr", "cad", "power", "atemp"])
     return ride_name, df
 
 
@@ -302,6 +304,8 @@ def windowed_features(points: pd.DataFrame, ride_name: str, cfg: WindowConfig = 
         if w["power"].notna().any():
             row["power_mean"] = w["power"].mean()
             row["power_std"] = w["power"].std()
+        if w["atemp"].notna().any():
+            row["atemp_mean"] = w["atemp"].mean()
 
         rows.append(row)
         seg_idx += 1
