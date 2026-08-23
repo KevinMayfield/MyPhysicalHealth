@@ -1,0 +1,9 @@
+# numpy<2 pinned for compatibility with the torch 2.2.x CPU wheel below.
+numpy<2
+pandas
+scikit-learn
+matplotlib
+seaborn
+torch
+jupyterlab
+ipykernel

@@ -2,3 +2,9 @@ node_modules/
 *.log
 .env
 .strava-sessions.json
+/segment-analysis/.venv/
+/segment-analysis/output/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+GPXExamples/
