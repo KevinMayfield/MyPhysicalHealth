@@ -2,6 +2,8 @@ const { css } = require('./style');
 const icons = require('./icons');
 const { formatDistanceKm, formatDuration, formatInt, formatDate, formatActivityLabel, escapeHtml } = require('./format');
 const { EFFORT_COLORS, EFFORT_LABELS } = require('./effortColors');
+const { TECHNICAL_COLORS, TECHNICAL_LABELS } = require('./technicalColors');
+const { TERRAIN_COLORS, TERRAIN_LABELS } = require('./terrainColors');
 const { hrZoneRangeLabels, powerZoneRangeLabels } = require('./analysis');
 
 function statCell(value, unit, label) {
@@ -33,6 +35,11 @@ function buildReportHtml(data) {
     mapResult,
     elevationSvg,
     elevationSvgFtp,
+    terrainMapResult,
+    terrainElevationSvg,
+    technicalMapResult,
+    technicalElevationSvg,
+    technicalSegments,
     cardio,
     strength,
     recovery,
@@ -119,6 +126,57 @@ function buildReportHtml(data) {
       </div>
       ${lowValueLegendHtml}
       ${endpointHintHtml}`;
+
+  // Two extra map + elevation pairs under the same section, same
+  // rendering style as the map/elevation above: a finer terrain
+  // breakdown, and technical/difficult sections.
+  const terrainNote = `Not all terrain trains you the same way. Flat, steady stretches and
+      sustained climbs let you hold a consistent effort for minutes at a time — that's what
+      builds VO2 max and long-ride endurance. Rolling terrain breaks that effort into surges
+      and recoveries, which is valuable in its own way but doesn't build the same sustained
+      aerobic engine. If you're training for a long steady event, the flat and sustained-climb
+      minutes below are your best guide to how much real aerobic training load this ride gave you.`;
+  const terrainMapMediaHtml = terrainMapResult.usedBasemap
+    ? `<img class="map-zoom-target" src="${terrainMapResult.dataUrl}" alt="Route map coloured by terrain breakdown" />`
+    : terrainMapResult.svgMarkup;
+  const terrainMapHtml = `<div class="map-zoom-wrap">
+      <div class="map-zoom-controls no-print">
+        <button type="button" class="map-zoom-btn" data-zoom="in" aria-label="Zoom in">+</button>
+        <button type="button" class="map-zoom-btn" data-zoom="out" aria-label="Zoom out">&#8722;</button>
+        <button type="button" class="map-zoom-btn" data-zoom="reset" aria-label="Reset zoom">&#8634;</button>
+      </div>
+      <div class="map-zoom-scroll">${terrainMapMediaHtml}</div>
+    </div>
+    ${terrainMapResult.usedBasemap ? `<p class="map-attribution">Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</p>` : ''}`;
+  const terrainLegendHtml = `<div class="legend">
+      ${Object.keys(TERRAIN_LABELS)
+        .map((key) => `<span class="swatch"><span class="dot" style="background:${TERRAIN_COLORS[key]}"></span>${TERRAIN_LABELS[key]}</span>`)
+        .join('')}
+    </div>`;
+
+  const hasTechnicalHighlights = Boolean(technicalSegments && technicalSegments.some((s) => s.cls !== 'other'));
+  const technicalIntro = hasTechnicalHighlights
+    ? `Winding or braking-heavy stretches — technical climbs and descents, and any cautious,
+        deliberately slow descents — regardless of how the terrain itself was classified above.`
+    : `Checked for winding or braking-heavy stretches — nothing stood out enough to flag. This
+        was a consistently smooth ride.`;
+  const technicalMapMediaHtml = technicalMapResult.usedBasemap
+    ? `<img class="map-zoom-target" src="${technicalMapResult.dataUrl}" alt="Route map highlighting technical and difficult sections" />`
+    : technicalMapResult.svgMarkup;
+  const technicalMapHtml = `<div class="map-zoom-wrap">
+      <div class="map-zoom-controls no-print">
+        <button type="button" class="map-zoom-btn" data-zoom="in" aria-label="Zoom in">+</button>
+        <button type="button" class="map-zoom-btn" data-zoom="out" aria-label="Zoom out">&#8722;</button>
+        <button type="button" class="map-zoom-btn" data-zoom="reset" aria-label="Reset zoom">&#8634;</button>
+      </div>
+      <div class="map-zoom-scroll">${technicalMapMediaHtml}</div>
+    </div>
+    ${technicalMapResult.usedBasemap ? `<p class="map-attribution">Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</p>` : ''}`;
+  const technicalLegendHtml = `<div class="legend">
+      ${Object.keys(TECHNICAL_LABELS)
+        .map((key) => `<span class="swatch"><span class="dot" style="background:${TECHNICAL_COLORS[key]}"></span>${TECHNICAL_LABELS[key]}</span>`)
+        .join('')}
+    </div>`;
 
   const activityLabel = formatActivityLabel(activityType);
 
@@ -445,6 +503,34 @@ function buildReportHtml(data) {
     </div>`
         : ''
     }
+
+    <div class="section-head technical-head">
+      <p class="eyebrow">Digging a little deeper</p>
+      <h3>Terrain breakdown</h3>
+      <p>${terrainNote}</p>
+    </div>
+    <div class="card map-card">
+      ${terrainMapHtml}
+      ${terrainLegendHtml}
+    </div>
+    <div class="card elevation-card">
+      <h3>The same route, laid out flat — terrain breakdown</h3>
+      ${terrainElevationSvg}
+    </div>
+
+    <div class="section-head technical-head">
+      <p class="eyebrow">Where it got tricky</p>
+      <h3>Technical / difficult sections</h3>
+      <p>${technicalIntro}</p>
+    </div>
+    <div class="card map-card">
+      ${technicalMapHtml}
+      ${technicalLegendHtml}
+    </div>
+    <div class="card elevation-card">
+      <h3>The same route, laid out flat — technical &amp; difficult sections</h3>
+      ${technicalElevationSvg}
+    </div>
   </section>
 
   ${activityTableHtml}

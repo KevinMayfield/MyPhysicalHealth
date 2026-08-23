@@ -158,7 +158,9 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.01em; }
 section { margin-bottom: 32px; }
 .section-head { text-align: center; margin-bottom: 20px; }
 .section-head h2 { font-size: 26px; font-weight: 800; margin: 6px 0 10px; }
+.section-head h3 { font-size: 20px; font-weight: 800; margin: 6px 0 10px; }
 .section-head p { color: var(--ink-muted); max-width: 620px; margin: 0 auto; line-height: 1.5; }
+.section-head.technical-head { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border); }
 
 .card {
   background: var(--bg-card);

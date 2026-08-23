@@ -63,12 +63,16 @@ function triangleMarker(x, y, s, color) {
  * absent) when available, matching the map; falls back to the terrain
  * category colours otherwise. Pass `zoneSegments` to colour by a specific
  * metric's zones (e.g. analysis.hrZoneSegments or .powerZoneSegments)
- * instead of the ride's primary effort metric. Marks any low-value/
+ * instead of the ride's primary effort metric. Pass `colorSegmentsOverride`
+ * (already-resolved `{startIdx, endIdx, color}`, e.g. from
+ * colorSegments.resolveClassColorSegments) to colour by any other
+ * per-point classification instead -- takes priority over `zoneSegments`
+ * when both are given. Marks any low-value/
  * junction spots, bonk episodes, and the aerobic decoupling onset (if
  * found) along the top, with a guide line down to the profile so they're
  * easy to line up with the climb/descent below.
  */
-function buildElevationSvg(points, analysis, width = 880, height = 220, zoneSegments) {
+function buildElevationSvg(points, analysis, width = 880, height = 220, zoneSegments, colorSegmentsOverride) {
   const { dist, smoothEle, segments, effortSegments, lowValueSpots, bonkEpisodes, decoupleOnset } = analysis;
   const n = points.length;
   const hasMarkers = Boolean((lowValueSpots && lowValueSpots.length) || (bonkEpisodes && bonkEpisodes.length) || decoupleOnset);
@@ -87,12 +91,15 @@ function buildElevationSvg(points, analysis, width = 880, height = 220, zoneSegm
 
   const segsToUse = zoneSegments || effortSegments;
   const useEffort = segsToUse && segsToUse.length > 0;
-  const colorSegments = useEffort
-    ? segsToUse.map((s) => ({ startIdx: s.startIdx, endIdx: s.endIdx, stroke: EFFORT_COLORS[s.bin], fill: EFFORT_FILL_ALPHA[s.bin] }))
-    : segments.map((s) => {
-        const cat = CATEGORY_BY_CLASS[s.cls];
-        return { startIdx: s.startIdx, endIdx: s.endIdx, stroke: COLORS[cat], fill: FILL_ALPHA[cat] };
-      });
+  const colorSegments =
+    colorSegmentsOverride && colorSegmentsOverride.length
+      ? colorSegmentsOverride.map((s) => ({ startIdx: s.startIdx, endIdx: s.endIdx, stroke: s.color, fill: hexToRgba(s.color, 0.32) }))
+      : useEffort
+        ? segsToUse.map((s) => ({ startIdx: s.startIdx, endIdx: s.endIdx, stroke: EFFORT_COLORS[s.bin], fill: EFFORT_FILL_ALPHA[s.bin] }))
+        : segments.map((s) => {
+            const cat = CATEGORY_BY_CLASS[s.cls];
+            return { startIdx: s.startIdx, endIdx: s.endIdx, stroke: COLORS[cat], fill: FILL_ALPHA[cat] };
+          });
 
   // Long mountain rides can carry tens of thousands of points; drawing
   // every one bloats the SVG enough to choke the renderer. One or two

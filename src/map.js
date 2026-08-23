@@ -112,16 +112,50 @@ function clipSegmentsToRange(colorSegments, startIdx, endIdx) {
   return out;
 }
 
+const ROUTE_STROKE_WIDTH = 5;
+// Half the stroke width: an out-and-back ride retraces the same road in
+// the opposite direction, which projects to the exact same pixels going
+// one way as coming back -- whichever pass gets drawn second completely
+// paints over the first, silently hiding it. Shifting every point a
+// little to the right of its own direction of travel (a fixed rotation
+// of the local heading, not overlap detection) naturally separates two
+// opposite-direction passes into two adjacent parallel lines instead of
+// one erasing the other, the same way a real road has two sides. The
+// same shift is imperceptible on a normal, non-overlapping stretch.
+const ROUTE_OFFSET_PX = ROUTE_STROKE_WIDTH / 2;
+
+function offsetRightOfTravel(x, y, dx, dy) {
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return { x, y };
+  // Rotate the direction vector 90 degrees clockwise for a "right of
+  // travel" perpendicular, then shift by a fixed distance along it.
+  const px = -dy / len;
+  const py = dx / len;
+  return { x: x + px * ROUTE_OFFSET_PX, y: y + py * ROUTE_OFFSET_PX };
+}
+
 function routePolylines(points, colorSegments, projectFn, offsetX, offsetY) {
+  const n = points.length;
+  const projected = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const { x, y } = projectFn(points[i].lat, points[i].lon);
+    projected[i] = { x: x - offsetX, y: y - offsetY };
+  }
+  const shifted = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const prev = projected[Math.max(0, i - 1)];
+    const next = projected[Math.min(n - 1, i + 1)];
+    shifted[i] = offsetRightOfTravel(projected[i].x, projected[i].y, next.x - prev.x, next.y - prev.y);
+  }
+
   const parts = [];
   for (const seg of colorSegments) {
     const coords = [];
     for (let i = seg.startIdx; i <= seg.endIdx; i++) {
-      const { x, y } = projectFn(points[i].lat, points[i].lon);
-      coords.push(`${(x - offsetX).toFixed(1)},${(y - offsetY).toFixed(1)}`);
+      coords.push(`${shifted[i].x.toFixed(1)},${shifted[i].y.toFixed(1)}`);
     }
     parts.push(
-      `<polyline points="${coords.join(' ')}" fill="none" stroke="${seg.color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />`
+      `<polyline points="${coords.join(' ')}" fill="none" stroke="${seg.color}" stroke-width="${ROUTE_STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round" />`
     );
   }
   return parts.join('');
@@ -298,7 +332,7 @@ function decoupleMarkersMarkup(decoupleOnset, projectFn, offsetX, offsetY) {
  * Throws if tiles can't be fetched — caller should fall back to the
  * schematic renderer.
  */
-async function renderBasemap(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, mapStartIdx, mapEndIdx) {
+async function renderBasemap(points, colorSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, mapStartIdx, mapEndIdx) {
   const bbox = computeBbox(points.slice(mapStartIdx, mapEndIdx + 1), 0.08);
   const { zoom, xMin, xMax, yMin, yMax } = chooseZoom(bbox);
 
@@ -339,9 +373,9 @@ async function renderBasemap(points, segments, effortSegments, highlights, lowVa
 
   const cropOffsetX = originX + cropX;
   const cropOffsetY = originY + cropY;
-  const colorSegments = clipSegmentsToRange(resolveRouteColorSegments(segments, effortSegments), mapStartIdx, mapEndIdx);
+  const clippedColorSegments = clipSegmentsToRange(colorSegments, mapStartIdx, mapEndIdx);
   const overlaySvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cropW}" height="${cropH}">
-    ${routePolylines(points, colorSegments, projectFn, cropOffsetX, cropOffsetY)}
+    ${routePolylines(points, clippedColorSegments, projectFn, cropOffsetX, cropOffsetY)}
     ${lowValueMarkersMarkup(lowValueSpots, projectFn, cropOffsetX, cropOffsetY)}
     ${bonkMarkersMarkup(bonkEpisodes, projectFn, cropOffsetX, cropOffsetY)}
     ${decoupleMarkersMarkup(decoupleOnset, projectFn, cropOffsetX, cropOffsetY)}
@@ -367,7 +401,7 @@ async function renderBasemap(points, segments, effortSegments, highlights, lowVa
  * no basemap, same colour coding. Returned as inline SVG markup (no
  * raster step needed) for use when tiles are unavailable.
  */
-function renderSchematic(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, mapStartIdx, mapEndIdx) {
+function renderSchematic(points, colorSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, mapStartIdx, mapEndIdx) {
   const width = 900;
   const height = 560;
   const margin = 60;
@@ -389,10 +423,10 @@ function renderSchematic(points, segments, effortSegments, highlights, lowValueS
   const offsetY = (height - spanY * scale) / 2;
   const projectFn = (lat, lon) => ({ x: xOf(lon) * scale + offsetX, y: yOf(lat) * scale + offsetY });
 
-  const colorSegments = clipSegmentsToRange(resolveRouteColorSegments(segments, effortSegments), mapStartIdx, mapEndIdx);
+  const clippedColorSegments = clipSegmentsToRange(colorSegments, mapStartIdx, mapEndIdx);
   const svgMarkup = `<svg class="map-zoom-target" viewBox="0 0 ${width} ${height}" width="100%" height="${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Schematic route map">
     <rect x="0" y="0" width="${width}" height="${height}" fill="#fdf9f0" />
-    ${routePolylines(points, colorSegments, projectFn, 0, 0)}
+    ${routePolylines(points, clippedColorSegments, projectFn, 0, 0)}
     ${lowValueMarkersMarkup(lowValueSpots, projectFn, 0, 0)}
     ${bonkMarkersMarkup(bonkEpisodes, projectFn, 0, 0)}
     ${decoupleMarkersMarkup(decoupleOnset, projectFn, 0, 0)}
@@ -403,14 +437,14 @@ function renderSchematic(points, segments, effortSegments, highlights, lowValueS
   return { svgMarkup, width, height, usedBasemap: false };
 }
 
-async function renderRouteMap(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, mapStartIdx, mapEndIdx) {
+async function renderRouteMap(points, colorSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, mapStartIdx, mapEndIdx) {
   const startIdx = mapStartIdx ?? 0;
   const endIdx = mapEndIdx ?? points.length - 1;
   try {
-    return await renderBasemap(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, startIdx, endIdx);
+    return await renderBasemap(points, colorSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, startIdx, endIdx);
   } catch {
-    return renderSchematic(points, segments, effortSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, startIdx, endIdx);
+    return renderSchematic(points, colorSegments, highlights, lowValueSpots, bonkEpisodes, decoupleOnset, startIdx, endIdx);
   }
 }
 
-module.exports = { renderRouteMap, COLORS };
+module.exports = { renderRouteMap, resolveRouteColorSegments, COLORS };

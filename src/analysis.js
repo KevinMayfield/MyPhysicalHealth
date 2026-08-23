@@ -13,7 +13,22 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
+/** Initial compass bearing (degrees, 0-360) from point 1 to point 2. */
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  const lat1r = toRad(lat1);
+  const lat2r = toRad(lat2);
+  const dLon = toRad(lon2 - lon1);
+  const x = Math.sin(dLon) * Math.cos(lat2r);
+  const y = Math.cos(lat1r) * Math.sin(lat2r) - Math.sin(lat1r) * Math.cos(lat2r) * Math.cos(dLon);
+  return ((Math.atan2(x, y) * 180) / Math.PI + 360) % 360;
+}
+
 const FLAT_THRESHOLD = 1.5; // %
+// Lower than FLAT_THRESHOLD -- grade between this and FLAT_THRESHOLD reads
+// as undulating "rolling" terrain for the terrain-breakdown view, not
+// genuinely flat or a real sustained climb/descent. Doesn't affect the
+// main cardio/strength/recovery split above, which only uses FLAT_THRESHOLD.
+const ROLLING_THRESHOLD = 1.0; // %
 const SMOOTH_WINDOW_S = 15; // seconds, +/- half
 const GRADIENT_WINDOW_M = 40; // metres, +/- half
 const MIN_SEGMENT_S = 20; // seconds
@@ -77,6 +92,20 @@ const DECOUPLE_HOLD_S = 600; // decoupling must hold for 10+ min to count as ons
 // points; capping each interval stops that gap inflating a segment's
 // apparent duration into looking like a longer bonk than it really was.
 const BONK_GAP_CAP_S = 60;
+
+// --- "Route analysis": winding/braking-heavy climbs and descents ---
+// Empirically derived from segment-analysis/notebooks/segment_clustering.ipynb,
+// which found turn-rate and braking both need their own smoothing window
+// before they're trustworthy — raw point-to-point bearing/speed is
+// dominated by GPS jitter, especially at low speed.
+const TECHNICAL_BRAKE_WINDOW_S = 5; // shorter than SMOOTH_WINDOW_S: braking events last a few seconds, a 15s window would average them away
+// Median smoothed turn-rate across real rides in that notebook was ~4-5
+// deg/s; treat clearly above that as "winding" rather than ordinary road
+// curvature or GPS noise.
+const TECHNICAL_TURN_RATE_DPS = 6;
+// Same notebook: sustained deceleration beyond this, after 5s smoothing,
+// reliably separates real braking from ordinary speed variation.
+const TECHNICAL_BRAKE_MPS2 = -0.4;
 
 function secondsBetween(a, b) {
   if (!a || !b) return 0;
@@ -355,15 +384,19 @@ function analyseRide(points, { age, ftp, lthr } = {}) {
 
   // Shared ~15s (or +/-7 point) smoothing window, reused for elevation,
   // speed, and effort so they all move at the same time resolution.
-  function timeWindowBounds(i) {
+  // windowS defaults to SMOOTH_WINDOW_S but can be overridden (e.g. a
+  // shorter window for braking, where a 15s smooth would average away a
+  // real deceleration event).
+  function timeWindowBounds(i, windowS = SMOOTH_WINDOW_S) {
     let lo = i;
     let hi = i;
     if (hasTime) {
-      while (lo > 0 && secondsBetween(points[lo - 1].time, points[i].time) <= SMOOTH_WINDOW_S / 2) lo--;
-      while (hi < n - 1 && secondsBetween(points[i].time, points[hi + 1].time) <= SMOOTH_WINDOW_S / 2) hi++;
+      while (lo > 0 && secondsBetween(points[lo - 1].time, points[i].time) <= windowS / 2) lo--;
+      while (hi < n - 1 && secondsBetween(points[i].time, points[hi + 1].time) <= windowS / 2) hi++;
     } else {
-      lo = Math.max(0, i - 7);
-      hi = Math.min(n - 1, i + 7);
+      const halfPoints = Math.floor(windowS / 2);
+      lo = Math.max(0, i - halfPoints);
+      hi = Math.min(n - 1, i + halfPoints);
     }
     return [lo, hi];
   }
@@ -456,6 +489,31 @@ function analyseRide(points, { age, ftp, lthr } = {}) {
   // --- Classification ---
   const classOf = (g) => (g > FLAT_THRESHOLD ? 'climb' : g < -FLAT_THRESHOLD ? 'descent' : 'flat');
   const pointClass = gradient.map(classOf);
+
+  // --- Terrain breakdown: a finer four-way read of the same gradient
+  //     (flat, steady / rolling / sustained climb / descent), independent
+  //     of the cardio/strength/recovery split above -- e.g. a genuinely
+  //     flat stretch reads differently here from a gently undulating one,
+  //     which the 3-way split above can't distinguish. ---
+  const terrainTextureClassOf = (g) => {
+    if (g > FLAT_THRESHOLD) return 'sustainedClimb';
+    if (g < -FLAT_THRESHOLD) return 'descent';
+    if (Math.abs(g) < ROLLING_THRESHOLD) return 'flatSteady';
+    return 'rolling';
+  };
+  const terrainTextureClass = gradient.map(terrainTextureClassOf);
+  let terrainSegments = [];
+  {
+    let start = 0;
+    const rawTerrainSegs = [];
+    for (let i = 1; i <= n; i++) {
+      if (i === n || terrainTextureClass[i] !== terrainTextureClass[start]) {
+        rawTerrainSegs.push({ cls: terrainTextureClass[start], startIdx: start, endIdx: i - 1 });
+        start = i;
+      }
+    }
+    terrainSegments = foldShortSegments(rawTerrainSegs, 'cls', points, hasTime);
+  }
 
   // --- Group into initial segments of consecutive same class ---
   let segments = [];
@@ -556,6 +614,71 @@ function analyseRide(points, { age, ftp, lthr } = {}) {
 
   const totalDurationS = hasTime ? secondsBetween(points[0].time, points[n - 1].time) : n;
   const totalDistanceM = dist[n - 1];
+  const overallAvgSpeedKmh = totalDurationS > 0 ? (totalDistanceM / 1000) / (totalDurationS / 3600) : 0;
+
+  // --- Route analysis: winding or braking-heavy climbs/descents, and
+  //     cautious (deliberately slow but otherwise smooth) descents,
+  //     regardless of how the terrain itself was classified above. ---
+  const rawTurnRateDps = new Array(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    const dt = hasTime ? secondsBetween(points[i - 1].time, points[i].time) : 1;
+    if (dt <= 0) continue;
+    const bearing1 = bearingDeg(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon);
+    const bearing0 = i > 1 ? bearingDeg(points[i - 2].lat, points[i - 2].lon, points[i - 1].lat, points[i - 1].lon) : bearing1;
+    const turn = Math.abs((((bearing1 - bearing0 + 180) % 360) + 360) % 360 - 180);
+    rawTurnRateDps[i] = turn / dt;
+  }
+  // Smoothed over the same ~15s window as elevation/speed above -- a
+  // single point-to-point bearing change is dominated by GPS jitter,
+  // especially at low speed.
+  const turnRateDps = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const [lo, hi] = timeWindowBounds(i);
+    let sum = 0;
+    for (let j = lo; j <= hi; j++) sum += rawTurnRateDps[j];
+    turnRateDps[i] = sum / (hi - lo + 1);
+  }
+
+  // A separately, more tightly smoothed speed for the braking derivative
+  // -- SMOOTH_WINDOW_S (15s) would average a real few-second braking
+  // event away entirely.
+  const brakeSmoothSpeedKmh = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    const [lo, hi] = timeWindowBounds(i, TECHNICAL_BRAKE_WINDOW_S);
+    const runM = dist[hi] - dist[lo];
+    const runS = hasTime ? secondsBetween(points[lo].time, points[hi].time) : hi - lo;
+    brakeSmoothSpeedKmh[i] = runS > 0 ? (runM / runS) * 3.6 : 0;
+  }
+  const accelMps2 = new Array(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    const dt = hasTime ? secondsBetween(points[i - 1].time, points[i].time) : 1;
+    if (dt > 0) accelMps2[i] = (brakeSmoothSpeedKmh[i] - brakeSmoothSpeedKmh[i - 1]) / 3.6 / dt;
+  }
+
+  const technicalClassAt = (i) => {
+    const interrupted = turnRateDps[i] > TECHNICAL_TURN_RATE_DPS || speedKmh[i] < STOP_SPEED_KMH || accelMps2[i] < TECHNICAL_BRAKE_MPS2;
+    if (pointClass[i] === 'descent') {
+      if (interrupted) return 'technicalDescent';
+      if (speedKmh[i] < overallAvgSpeedKmh) return 'cautiousDescent';
+      return 'other';
+    }
+    if (pointClass[i] === 'climb' && interrupted) return 'technicalClimb';
+    return 'other';
+  };
+  const technicalClass = points.map((_, i) => technicalClassAt(i));
+
+  let technicalSegments = [];
+  {
+    let start = 0;
+    const rawTechSegs = [];
+    for (let i = 1; i <= n; i++) {
+      if (i === n || technicalClass[i] !== technicalClass[start]) {
+        rawTechSegs.push({ cls: technicalClass[start], startIdx: start, endIdx: i - 1 });
+        start = i;
+      }
+    }
+    technicalSegments = foldShortSegments(rawTechSegs, 'cls', points, hasTime);
+  }
 
   const stats = {};
   for (const cat of Object.keys(categories)) {
@@ -626,8 +749,6 @@ function analyseRide(points, { age, ftp, lthr } = {}) {
   //     a missed opportunity). A dip in speed within the spot suggests it
   //     may be a junction, traffic lights, or a rough patch that forced a
   //     slowdown, rather than just an easy stretch. ---
-  const overallAvgSpeedKmh = totalDurationS > 0 ? (totalDistanceM / 1000) / (totalDurationS / 3600) : 0;
-
   let lowValueSpots = [];
   if (primaryZones) {
     const zoneBin = primaryZones.zoneBin;
@@ -816,6 +937,8 @@ function analyseRide(points, { age, ftp, lthr } = {}) {
     gradient,
     pointClass,
     segments,
+    terrainSegments,
+    technicalSegments,
     effortSegments,
     effortSource,
     effortThreshold,

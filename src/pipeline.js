@@ -1,7 +1,10 @@
 const { parseGpx } = require('./gpx');
 const { analyseRide } = require('./analysis');
 const { geocodeHighlights, geocodeSpots } = require('./geocode');
-const { renderRouteMap } = require('./map');
+const { renderRouteMap, resolveRouteColorSegments } = require('./map');
+const { resolveClassColorSegments } = require('./colorSegments');
+const { TECHNICAL_COLORS } = require('./technicalColors');
+const { TERRAIN_COLORS } = require('./terrainColors');
 const { buildElevationSvg } = require('./elevationProfile');
 const { buildReportHtml } = require('./template');
 
@@ -39,8 +42,7 @@ async function generateReportHtmlFromPoints(
 
   const mapResult = await renderRouteMap(
     points,
-    analysis.segments,
-    analysis.effortSegments,
+    resolveRouteColorSegments(analysis.segments, analysis.effortSegments),
     highlights,
     analysis.lowValueSpots,
     analysis.bonkEpisodes,
@@ -61,6 +63,19 @@ async function generateReportHtmlFromPoints(
       ? buildElevationSvg(points, analysis, 880, 220, analysis.powerZoneSegments)
       : null;
 
+  // Two extra map + elevation pairs, neither with highlight pins or spot
+  // markers of its own: a finer terrain breakdown (flat/rolling/sustained
+  // climb/descent), and technical/difficult sections (winding, braking,
+  // cautious descents) -- both independent of the main cardio/strength/
+  // recovery split and of each other.
+  const terrainColorSegments = resolveClassColorSegments(analysis.terrainSegments, TERRAIN_COLORS);
+  const terrainMapResult = await renderRouteMap(points, terrainColorSegments, {}, [], [], null, analysis.mapStartIdx, analysis.mapEndIdx);
+  const terrainElevationSvg = buildElevationSvg(points, analysis, 880, 220, null, terrainColorSegments);
+
+  const technicalColorSegments = resolveClassColorSegments(analysis.technicalSegments, TECHNICAL_COLORS);
+  const technicalMapResult = await renderRouteMap(points, technicalColorSegments, {}, [], [], null, analysis.mapStartIdx, analysis.mapEndIdx);
+  const technicalElevationSvg = buildElevationSvg(points, analysis, 880, 220, null, technicalColorSegments);
+
   const totalClimbM = analysis.stats.cardio.elevGainM + analysis.stats.strength.elevGainM + analysis.stats.recovery.elevGainM;
 
   const hrValues = points.map((p) => p.hr).filter((h) => typeof h === 'number');
@@ -76,6 +91,12 @@ async function generateReportHtmlFromPoints(
     mapResult,
     elevationSvg,
     elevationSvgFtp,
+    terrainMapResult,
+    terrainElevationSvg,
+    terrainSegments: analysis.terrainSegments,
+    technicalMapResult,
+    technicalElevationSvg,
+    technicalSegments: analysis.technicalSegments,
     cardio: analysis.stats.cardio,
     strength: analysis.stats.strength,
     recovery: analysis.stats.recovery,
